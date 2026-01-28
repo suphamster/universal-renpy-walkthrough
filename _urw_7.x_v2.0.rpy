@@ -542,7 +542,25 @@ init -998 python:
                 
             stmt_class = stmt.__class__.__name__
             
+            # Check for Pass statement first
+            if stmt_class == 'Pass':
+                urw_log.debug("Found Pass statement at depth {0}".format(depth), "ANALYZER")
+                # Create a special consequence for Pass statements for debugging
+                if urw_config.DEBUG:
+                    consequences.append(URWConsequence(
+                        ConsequenceType.CODE, 
+                        "pass", 
+                        "", 
+                        "pass statement",
+                        getattr(stmt, 'linenumber', 0),
+                        confidence=0.1
+                    ))
+                return consequences
+                
             if stmt_class in self.SKIP_STATEMENTS:
+                # Log skipped statements for debugging
+                if urw_config.DEBUG:
+                    urw_log.debug("Skipping {0} statement".format(stmt_class), "ANALYZER")
                 return consequences
                 
             if stmt_class == 'Python':
@@ -557,8 +575,15 @@ init -998 python:
                 
             elif stmt_class == 'Call':
                 label = getattr(stmt, 'label', '?')
+                arguments = getattr(stmt, 'arguments', None)
+                args_str = ""
+                if arguments:
+                    try:
+                        args_str = " with args" if len(arguments.arguments) > 0 else ""
+                    except:
+                        pass
                 consequences.append(URWConsequence(
-                    ConsequenceType.CALL, label, '', "⇒ {0}".format(label),
+                    ConsequenceType.CALL, label, '', "⇒ {0}{1}".format(label, args_str),
                     getattr(stmt, 'linenumber', 0)
                 ))
                 
@@ -577,24 +602,141 @@ init -998 python:
                 consequences.extend(self._analyze_while(stmt, depth))
                 
             elif stmt_class == 'Menu':
-                pass
+                # Handle nested menus if needed
+                if urw_config.DEBUG:
+                    urw_log.debug("Found nested Menu statement", "ANALYZER")
+                # Don't analyze nested menus deeply to avoid infinite recursion
+                consequences.append(URWConsequence(
+                    ConsequenceType.CODE, 
+                    "nested menu", 
+                    "", 
+                    "contains menu",
+                    getattr(stmt, 'linenumber', 0),
+                    confidence=0.3
+                ))
                 
             elif stmt_class == 'UserStatement':
-                pass
+                # Handle custom Ren'Py statements
+                name = getattr(stmt, 'name', 'unknown')
+                if urw_config.DEBUG:
+                    urw_log.debug("UserStatement: {0}".format(name), "ANALYZER")
+                consequences.append(URWConsequence(
+                    ConsequenceType.CODE, 
+                    name, 
+                    "", 
+                    "custom statement: {0}".format(name),
+                    getattr(stmt, 'linenumber', 0),
+                    confidence=0.2
+                ))
                 
+            elif stmt_class == 'Image':
+                # Handle image statements
+                img_name = getattr(stmt, 'imgname', '?')
+                if urw_config.DEBUG:
+                    urw_log.debug("Image statement: {0}".format(img_name), "ANALYZER")
+                    
+            elif stmt_class == 'Scene':
+                # Handle scene statements
+                layer = getattr(stmt, 'layer', 'master')
+                if urw_config.DEBUG:
+                    urw_log.debug("Scene statement on layer {0}".format(layer), "ANALYZER")
+                    
+            elif stmt_class == 'Show':
+                # Handle show statements
+                img = getattr(stmt, 'img', '?')
+                if urw_config.DEBUG:
+                    urw_log.debug("Show statement: {0}".format(img), "ANALYZER")
+                    
+            elif stmt_class == 'Hide':
+                # Handle hide statements
+                img = getattr(stmt, 'img', '?')
+                if urw_config.DEBUG:
+                    urw_log.debug("Hide statement: {0}".format(img), "ANALYZER")
+                    
+            elif stmt_class == 'With':
+                # Handle with statements (transitions)
+                expr = getattr(stmt, 'expr', None)
+                if expr:
+                    trans = str(expr)
+                    if urw_config.DEBUG:
+                        urw_log.debug("With statement: {0}".format(trans), "ANALYZER")
+                        
+            elif stmt_class == 'Say':
+                # Handle say statements (dialogue)
+                who = getattr(stmt, 'who', None)
+                what = getattr(stmt, 'what', '')
+                if urw_config.DEBUG:
+                    snippet = what[:30] + "..." if len(what) > 30 else what
+                    urw_log.debug("Say: {0}: {1}".format(who or 'narrator', snippet), "ANALYZER")
+                    
+            elif stmt_class == 'Init':
+                # Handle init statements
+                priority = getattr(stmt, 'priority', 0)
+                if urw_config.DEBUG:
+                    urw_log.debug("Init statement with priority {0}".format(priority), "ANALYZER")
+                    
+            elif stmt_class == 'Label':
+                # Handle label statements
+                name = getattr(stmt, 'name', '?')
+                if urw_config.DEBUG:
+                    urw_log.debug("Label: {0}".format(name), "ANALYZER")
+                    
+            elif stmt_class == 'Translate':
+                # Handle translate statements
+                language = getattr(stmt, 'language', '?')
+                if urw_config.DEBUG:
+                    urw_log.debug("Translate for language: {0}".format(language), "ANALYZER")
+                    
+            elif stmt_class == 'TranslatableString':
+                # Handle translatable strings
+                if urw_config.DEBUG:
+                    urw_log.debug("TranslatableString found", "ANALYZER")
+                    
+            elif stmt_class == 'TranslatePython':
+                # Handle translate python blocks
+                if urw_config.DEBUG:
+                    urw_log.debug("TranslatePython block", "ANALYZER")
+                # Analyze the python code inside translate blocks
+                if hasattr(stmt, 'block'):
+                    consequences.extend(self.analyze_block(stmt.block, depth + 1))
+                    
+            elif stmt_class == 'TranslateString':
+                # Handle individual string translations
+                if urw_config.DEBUG:
+                    urw_log.debug("TranslateString", "ANALYZER")
+                    
             else:
-                for attr in ['target', 'label', 'expression', 'name', 'value']:
+                # Unknown statement type - try to extract any useful info
+                if urw_config.DEBUG:
+                    urw_log.debug("Unknown statement type: {0}".format(stmt_class), "ANALYZER")
+                    
+                # Try to get basic attributes
+                for attr in ['target', 'label', 'expression', 'name', 'value', 'code', 'block', 'condition']:
                     if hasattr(stmt, attr):
                         value = getattr(stmt, attr)
                         if value and not str(value).startswith('_'):
+                            # Create a generic consequence for unknown statements
                             consequences.append(URWConsequence(
                                 ConsequenceType.UNKNOWN,
-                                "{0}.{1}".format(stmt_class, attr), str(value)[:30], '',
+                                "{0}.{1}".format(stmt_class, attr), 
+                                str(value)[:30], 
+                                '',
                                 getattr(stmt, 'linenumber', 0),
-                                confidence=0.5
+                                confidence=0.1
                             ))
                             break
                             
+                # If we couldn't extract anything, at least note that we found something
+                if not consequences and urw_config.DEBUG:
+                    consequences.append(URWConsequence(
+                        ConsequenceType.UNKNOWN,
+                        stmt_class, 
+                        "", 
+                        "unknown statement type",
+                        getattr(stmt, 'linenumber', 0),
+                        confidence=0.05
+                    ))
+                    
             return consequences
             
         def _analyze_python(self, stmt, depth):
@@ -612,8 +754,19 @@ init -998 python:
                 return consequences
                 
             try:
-                consequences.extend(self._parse_python_ast(source, depth))
+                # Handle inline Python statements (starting with $)
+                if source.strip().startswith('$'):
+                    # Extract the Python code after the $
+                    python_code = source.strip()[1:].strip()
+                    # Analyze it as regular Python
+                    consequences.extend(self._parse_python_ast(python_code, depth))
+                    consequences.extend(self._parse_python_regex(python_code))
+                else:
+                    consequences.extend(self._parse_python_ast(source, depth))
+                    consequences.extend(self._parse_python_regex(source))
+                    
             except:
+                # Fall back to regex parsing
                 consequences.extend(self._parse_python_regex(source))
                 
             return consequences
@@ -747,8 +900,188 @@ init -998 python:
                 line = line.strip()
                 if not line or line.startswith('#'):
                     continue
-                    
-                if line.startswith('if ') and ':' in line:
+                
+                # Handle inline Python ($)
+                if line.startswith('$'):
+                    line = line[1:].strip()
+                    if not line:
+                        continue
+                
+                # Handle object attribute decreases (like kate.loyalty -= 1)
+                if '-=' in line and '.' in line.split('-=')[0]:
+                    try:
+                        # Handle object.attribute -= value
+                        var_part, val = line.split('-=', 1)
+                        var_part = var_part.strip()
+                        val = val.strip().rstrip(';')
+                        
+                        # Handle complex expressions
+                        if '+' in val or '-' in val or '*' in val or '/' in val:
+                            val = "expr"
+                        
+                        # Extract just the variable name
+                        if '.' in var_part:
+                            # Handle kate.loyalty format
+                            parts = var_part.split('.')
+                            if len(parts) >= 2:
+                                obj_name = parts[0].strip()
+                                attr_name = parts[1].strip()
+                                # Clean up any array access
+                                attr_name = re.sub(r'\[.*?\]', '', attr_name)
+                                var_name = "{0}.{1}".format(obj_name, attr_name)
+                            else:
+                                var_name = var_part
+                        else:
+                            var_name = re.sub(r'\[.*?\]', '', var_part)
+                        
+                        try:
+                            # Try to parse the value
+                            if val.isdigit():
+                                actual_value = val
+                            elif val.replace('.', '').isdigit():
+                                actual_value = val
+                            elif val.startswith('-') and val[1:].isdigit():
+                                actual_value = val
+                            else:
+                                actual_value = val
+                        except:
+                            actual_value = val
+                            
+                        consequences.append(URWConsequence(
+                            ConsequenceType.DECREASE, var_name, actual_value[:20]
+                        ))
+                    except Exception as e:
+                        urw_log.debug("Failed to parse decrease: {0} - {1}".format(line, e), "ANALYZER")
+                
+                # Handle object attribute increases (+=)
+                elif '+=' in line and '.' in line.split('+=')[0]:
+                    try:
+                        var_part, val = line.split('+=', 1)
+                        var_part = var_part.strip()
+                        val = val.strip().rstrip(';')
+                        
+                        if '+' in val or '-' in val or '*' in val or '/' in val:
+                            val = "expr"
+                        
+                        if '.' in var_part:
+                            parts = var_part.split('.')
+                            if len(parts) >= 2:
+                                obj_name = parts[0].strip()
+                                attr_name = parts[1].strip()
+                                attr_name = re.sub(r'\[.*?\]', '', attr_name)
+                                var_name = "{0}.{1}".format(obj_name, attr_name)
+                            else:
+                                var_name = var_part
+                        else:
+                            var_name = re.sub(r'\[.*?\]', '', var_part)
+                            
+                        try:
+                            if val.isdigit():
+                                actual_value = val
+                            elif val.replace('.', '').isdigit():
+                                actual_value = val
+                            elif val.startswith('-') and val[1:].isdigit():
+                                actual_value = val
+                            else:
+                                actual_value = val
+                        except:
+                            actual_value = val
+                            
+                        consequences.append(URWConsequence(
+                            ConsequenceType.INCREASE, var_name, actual_value[:20]
+                        ))
+                    except Exception as e:
+                        urw_log.debug("Failed to parse increase: {0} - {1}".format(line, e), "ANALYZER")
+                
+                # Handle regular variable decreases
+                elif '-=' in line:
+                    try:
+                        var, val = line.split('-=', 1)
+                        var = re.sub(r'\[.*?\]', '', var.strip())
+                        val = val.strip().rstrip(';')
+                        
+                        if '+' in val or '-' in val or '*' in val or '/' in val:
+                            val = "expr"
+                        
+                        try:
+                            if val.isdigit():
+                                actual_value = val
+                            elif val.replace('.', '').isdigit():
+                                actual_value = val
+                            elif val.startswith('-') and val[1:].isdigit():
+                                actual_value = val
+                            else:
+                                actual_value = val
+                        except:
+                            actual_value = val
+                            
+                        consequences.append(URWConsequence(
+                            ConsequenceType.DECREASE, var, actual_value[:20]
+                        ))
+                    except:
+                        pass
+                
+                # Handle regular variable increases
+                elif '+=' in line:
+                    try:
+                        var, val = line.split('+=', 1)
+                        var = re.sub(r'\[.*?\]', '', var.strip())
+                        val = val.strip().rstrip(';')
+                        
+                        if '+' in val or '-' in val or '*' in val or '/' in val:
+                            val = "expr"
+                        
+                        try:
+                            if val.isdigit():
+                                actual_value = val
+                            elif val.replace('.', '').isdigit():
+                                actual_value = val
+                            elif val.startswith('-') and val[1:].isdigit():
+                                actual_value = val
+                            else:
+                                actual_value = val
+                        except:
+                            actual_value = val
+                            
+                        consequences.append(URWConsequence(
+                            ConsequenceType.INCREASE, var, actual_value[:20]
+                        ))
+                    except:
+                        pass
+                
+                # Handle assignments
+                elif '=' in line and '==' not in line and '!=' not in line and '<=' not in line and '>=' not in line:
+                    if not any(line.startswith(x) for x in ['if ', 'elif ', 'for ', 'while ', 'def ', 'class ', '@']):
+                        try:
+                            var, val = line.split('=', 1)
+                            var = re.sub(r'\[.*?\]', '', var.strip())
+                            val = val.strip().rstrip(';')
+                            
+                            if not var.startswith('_') and len(var) > 1:
+                                ctype = ConsequenceType.ASSIGN
+                                if val.lower() in ['true', 'false']:
+                                    ctype = ConsequenceType.BOOLEAN
+                                    
+                                consequences.append(URWConsequence(
+                                    ctype, var, val[:20]
+                                ))
+                        except:
+                            pass
+                
+                # Handle boolean assignments
+                elif any(keyword in line.lower() for keyword in [' = true', ' = false']):
+                    try:
+                        var, val = line.split('=', 1)
+                        var = re.sub(r'\[.*?\]', '', var.strip())
+                        val = val.strip().rstrip(';')
+                        consequences.append(URWConsequence(
+                            ConsequenceType.BOOLEAN, var, val
+                        ))
+                    except:
+                        pass
+                
+                # Handle if statements
+                elif line.startswith('if ') and ':' in line:
                     try:
                         condition_part = line.split('if ')[1].split(':')[0].strip()
                         
@@ -768,6 +1101,7 @@ init -998 python:
                             ConsequenceType.CONDITION, "if condition", "1"
                         ))
                 
+                # Handle elif statements
                 elif line.startswith('elif ') and ':' in line:
                     try:
                         condition_part = line.split('elif ')[1].split(':')[0].strip()
@@ -788,88 +1122,13 @@ init -998 python:
                             ConsequenceType.CONDITION, "elif condition", "1"
                         ))
                 
+                # Handle else
                 elif line.strip() == 'else:':
                     consequences.append(URWConsequence(
                         ConsequenceType.CONDITION, "else", "1"
                     ))
-                    
-                elif '+=' in line:
-                    try:
-                        var, val = line.split('+=', 1)
-                        var = re.sub(r'\[.*?\]', '', var.strip())
-                        val = val.strip()
-                        
-                        try:
-                            if val.isdigit():
-                                actual_value = val
-                            elif val.replace('.', '').isdigit():
-                                actual_value = val
-                            elif val.startswith('-') and val[1:].isdigit():
-                                actual_value = val
-                            else:
-                                actual_value = val
-                        except:
-                            actual_value = val
-                            
-                        consequences.append(URWConsequence(
-                            ConsequenceType.INCREASE, var, actual_value[:20]
-                        ))
-                    except:
-                        pass
-                        
-                elif '-=' in line:
-                    try:
-                        var, val = line.split('-=', 1)
-                        var = re.sub(r'\[.*?\]', '', var.strip())
-                        val = val.strip()
-                        
-                        try:
-                            if val.isdigit():
-                                actual_value = val
-                            elif val.replace('.', '').isdigit():
-                                actual_value = val
-                            elif val.startswith('-') and val[1:].isdigit():
-                                actual_value = val
-                            else:
-                                actual_value = val
-                        except:
-                            actual_value = val
-                            
-                        consequences.append(URWConsequence(
-                            ConsequenceType.DECREASE, var, actual_value[:20]
-                        ))
-                    except:
-                        pass
-                        
-                elif '=' in line and '==' not in line and '!=' not in line and '<=' not in line and '>=' not in line:
-                    if not any(line.startswith(x) for x in ['if ', 'elif ', 'for ', 'while ', 'def ', 'class ']):
-                        try:
-                            var, val = line.split('=', 1)
-                            var = re.sub(r'\[.*?\]', '', var.strip())
-                            val = val.strip()
-                            
-                            if not var.startswith('_') and len(var) > 1:
-                                ctype = ConsequenceType.ASSIGN
-                                if val.lower() in ['true', 'false']:
-                                    ctype = ConsequenceType.BOOLEAN
-                                    
-                                consequences.append(URWConsequence(
-                                    ctype, var, val[:20]
-                                ))
-                        except:
-                            pass
-                            
-                elif any(keyword in line.lower() for keyword in [' = true', ' = false']):
-                    try:
-                        var, val = line.split('=', 1)
-                        var = re.sub(r'\[.*?\]', '', var.strip())
-                        val = val.strip()
-                        consequences.append(URWConsequence(
-                            ConsequenceType.BOOLEAN, var, val
-                        ))
-                    except:
-                        pass
-                        
+                
+                # Handle function calls (excluding Ren'Py display functions)
                 elif '(' in line and ')' in line:
                     ignore_functions = [
                         'renpy.pause', 'renpy.sound', 'renpy.music', 'renpy.with_statement',
@@ -884,15 +1143,36 @@ init -998 python:
                             break
                     
                     if not should_ignore:
-                        consequences.append(URWConsequence(
-                            ConsequenceType.FUNCTION, 'Function call', line[:30], line
-                        ))
+                        # Try to extract function name
+                        func_match = re.match(r'^([a-zA-Z_][a-zA-Z0-9_]*)\(', line)
+                        if func_match:
+                            func_name = func_match.group(1)
+                            consequences.append(URWConsequence(
+                                ConsequenceType.FUNCTION, func_name, "", line[:40]
+                            ))
+                        else:
+                            consequences.append(URWConsequence(
+                                ConsequenceType.FUNCTION, 'Function call', line[:30], line
+                            ))
                 
+                # Handle other code
                 elif len(line) > 3 and not line.startswith('#') and not line.strip().startswith('renpy.'):
-                    consequences.append(URWConsequence(
-                        ConsequenceType.CODE, 'Python code', line[:30], line
-                    ))
-                        
+                    # Check if it's a variable access or method call
+                    if '.' in line and '(' not in line and '=' not in line:
+                        # Might be an object attribute access
+                        parts = line.split('.')
+                        if len(parts) >= 2:
+                            obj_name = parts[0].strip()
+                            attr_name = parts[1].strip()
+                            if not attr_name.startswith('_'):
+                                consequences.append(URWConsequence(
+                                    ConsequenceType.CODE, "{0}.{1}".format(obj_name, attr_name), "", line[:30]
+                                ))
+                    else:
+                        consequences.append(URWConsequence(
+                            ConsequenceType.CODE, 'Python code', line[:30], line
+                        ))
+                            
             return consequences
             
         def _analyze_conditional(self, stmt, depth):
@@ -1684,22 +1964,43 @@ init -998 python:
                     unique.append(cons)
                     
             return unique
-            
+                    
         def categorize_variable(self, var_name):
             var_lower = var_name.lower()
             
-            for kw in self.RELATIONSHIP_KEYWORDS:
-                if kw in var_lower:
+            # Check for relationship keywords
+            relationship_patterns = [
+                r'(love|affection|trust|faith|friendship|respect|loyalty|romance|intimacy|bond)',
+                r'(re_|rel_)',
+                r'(.*score.*)',  # matches any score
+            ]
+            
+            for pattern in relationship_patterns:
+                if re.search(pattern, var_lower):
                     return ConsequenceType.RELATIONSHIP
-                    
-            for kw in self.STAT_KEYWORDS:
-                if kw in var_lower:
+            
+            # Check for stat keywords  
+            stat_patterns = [
+                r'(points|money|health|reputation|stat|score)',
+                r'(strength|intelligence|charisma|wisdom|luck|karma|morality|corruption)',
+                r'(energy|stamina|mana|hp|mp|xp)',
+            ]
+            
+            for pattern in stat_patterns:
+                if re.search(pattern, var_lower):
                     return ConsequenceType.STAT
-                    
-            for kw in self.FLAG_KEYWORDS:
-                if kw in var_lower:
+            
+            # Check for flag keywords
+            flag_patterns = [
+                r'(flag|seen|unlocked|completed|visited|discovered)',
+                r'(enabled|active|achieved|triggered|done|finished)',
+                r'(.*_flag|flag_.*)',  # matches any *_flag or flag_* patterns
+            ]
+            
+            for pattern in flag_patterns:
+                if re.search(pattern, var_lower):
                     return ConsequenceType.FLAG
-                    
+            
             return None
     
     urw_processor = URWProcessor()
@@ -2029,9 +2330,9 @@ init -998 python:
     
     _urw_tag_variants = register_urw_tag()
     
-    ##################################################################
-    #                URW MENU WRAPPER (FIXED VERSION)                #
-    ##################################################################
+##################################################################
+#                URW MENU WRAPPER (FIXED VERSION)                #
+##################################################################
 
     class URWMenuWrapper(object):
         """Wraps the menu function to inject walkthrough hints - FIXED VERSION"""
@@ -2118,7 +2419,14 @@ init -998 python:
                 
                 self._force_clean_widget_state()
                 
-                result = self._original_menu(enhanced_items, set_expr, args, kwargs, item_arguments)
+                # CRITICAL FIX: Try to catch and log any exceptions from the original menu
+                try:
+                    result = self._original_menu(enhanced_items, set_expr, args, kwargs, item_arguments)
+                except Exception as e:
+                    urw_log.error("Error in original menu call: {0}".format(str(e)), "MENU")
+                    # Fall back to original items if enhanced ones cause issues
+                    urw_log.info("Falling back to original menu items", "MENU")
+                    result = self._original_menu(items, set_expr, args, kwargs, item_arguments)
                 
                 if result is not None and result < len(choice_consequences):
                     cons = choice_consequences[result]
@@ -2130,10 +2438,19 @@ init -998 python:
                 return result
                 
             except Exception as e:
-                urw_log.error("Error in wrapped menu: {0}".format(e), "MENU")
+                urw_log.error("Error in wrapped menu: {0}".format(str(e)), "MENU")
+                import traceback
+                urw_log.error("Traceback: {0}".format(traceback.format_exc()), "MENU")
                 self._processing_menu = False
                 self._force_clean_widget_state()
-                return self._original_menu(items, set_expr, args, kwargs, item_arguments)
+                
+                # Try to recover by calling original menu
+                try:
+                    return self._original_menu(items, set_expr, args, kwargs, item_arguments)
+                except Exception as e2:
+                    urw_log.error("Even original menu failed: {0}".format(str(e2)), "MENU")
+                    # Last resort: create a simple menu
+                    return 0
         
         def _force_clean_widget_state(self):
             """Force clean widget state to prevent stack issues"""
@@ -2156,7 +2473,7 @@ init -998 python:
                 urw_log.debug("Widget cleanup error (non-critical): {0}".format(e), "MENU")
         
         def _create_enhanced_items(self, items, consequences):
-            """Create enhanced menu items with consequence hints"""
+            """Create enhanced menu items with consequence hints - FIXED for pass statements"""
             enhanced_items = []
             
             for i, item in enumerate(items):
@@ -2249,6 +2566,7 @@ init -998 python:
                             
                 except Exception as e:
                     urw_log.error("Error enhancing item {0}: {1}".format(i, e), "MENU")
+                    # CRITICAL: Add the original item to prevent menu corruption
                     enhanced_items.append(item)
             
             return enhanced_items
