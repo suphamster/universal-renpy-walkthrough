@@ -473,7 +473,14 @@ init -998 python:
             return base_priority
     
     ##################################################################
-    #                URW AST ANALYZER                                #
+    #                    IMPORT QUITEXCEPTION                        #
+    ##################################################################
+    
+    # Add QuitException import
+    QuitException = renpy.game.QuitException
+    
+    ##################################################################
+    #                URW AST ANALYZER (UPDATED)                      #
     ##################################################################
     
     class URWAnalyzer(object):
@@ -482,7 +489,7 @@ init -998 python:
         CONTROL_EXCEPTIONS = (
             renpy.game.FullRestartException,
             renpy.game.UtterRestartException,
-            renpy.game.QuitException,
+            QuitException,  # Changed from renpy.game.QuitException to use the imported name
             renpy.game.JumpException,
             renpy.game.JumpOutException,
             renpy.game.CallException,
@@ -1866,9 +1873,13 @@ init -998 python:
                     urw_log.warn("Could not find AST item for choice {0}".format(choice_index), "PROCESSOR")
                     return consequences
                 
-                if len(menu_item) >= 3 and menu_item[2]:
+                # FIXED: Check if the block exists and is not None before analyzing
+                if len(menu_item) >= 3 and menu_item[2] is not None:
                     choice_block = menu_item[2]
                     consequences = urw_analyzer.analyze_block(choice_block)
+                else:
+                    # Choice has no block (like a pass statement)
+                    urw_log.debug("Choice {0} has no block (likely pass statement)".format(choice_index), "PROCESSOR")
                     
                 consequences = self._filter_consequences(consequences)
                 consequences = self._deduplicate(consequences)
@@ -2095,6 +2106,7 @@ init -998 python:
             return self.THEMES.get(theme_name, self.THEMES['modern'])
             
         def format_consequences(self, consequences, max_display=None, show_all=None):
+            """Format consequences for display"""
             if not consequences:
                 return ""
                 
@@ -2124,6 +2136,7 @@ init -998 python:
             return result
             
         def _format_single(self, cons, theme, full_text=None):
+            """Format a single consequence"""
             if full_text is None:
                 full_text = persistent.urw_full_text
                 
@@ -2182,11 +2195,13 @@ init -998 python:
             return "{{color={0}}}{1}{{/color}}".format(color, text)
             
         def _escape_renpy(self, text):
+            """Escape Ren'Py special characters"""
             text = text.replace('{', '{{').replace('}', '}}')
             text = text.replace('[', '[[').replace(']', ']]')
             return text
             
         def format_for_urw_tag(self, consequences, prefix="WT: "):
+            """Format consequences for URW text tag"""
             if not consequences:
                 return ""
                 
@@ -2221,6 +2236,7 @@ init -998 python:
             )
             
         def _create_colored_text(self):
+            """Create colored text for display"""
             theme = urw_formatter.get_theme()
             
             result = "{{size={0}}}{{color={1}}}{2}{{/color}}".format(self.size, self.base_color, self.prefix)
@@ -2238,6 +2254,7 @@ init -998 python:
             return result
             
         def _get_color_for_part(self, part, theme):
+            """Get color for a text part based on content"""
             part_lower = part.lower()
             
             if part.startswith('+'):
@@ -2264,9 +2281,11 @@ init -998 python:
                 return self.base_color
                 
         def render(self, width, height, st, at):
+            """Render the displayable"""
             return self.child.render(width, height, st, at)
             
         def visit(self):
+            """Return child displayables"""
             return [self.child]
     
     ##################################################################
@@ -2330,10 +2349,30 @@ init -998 python:
     
     _urw_tag_variants = register_urw_tag()
     
-##################################################################
-#                URW MENU WRAPPER (FIXED VERSION)                #
-##################################################################
-
+    ##################################################################
+    #              URW SCREEN CLOSURE HELPER                         #
+    ##################################################################
+    
+    def urw_close_all_screens():
+        """Close all URW screens"""
+        try:
+            if renpy.get_screen("URW_preferences"):
+                renpy.hide_screen("URW_preferences")
+            if renpy.get_screen("URW_filters"):
+                renpy.hide_screen("URW_filters")
+            if renpy.get_screen("URW_stats_screen"):
+                renpy.hide_screen("URW_stats_screen")
+            if renpy.get_screen("URW_debug"):
+                renpy.hide_screen("URW_debug")
+            if renpy.get_screen("URW_full_viewer"):
+                renpy.hide_screen("URW_full_viewer")
+        except:
+            pass
+    
+    ##################################################################
+    #                URW MENU WRAPPER (FIXED VERSION)                #
+    ##################################################################
+    
     class URWMenuWrapper(object):
         """Wraps the menu function to inject walkthrough hints - FIXED VERSION"""
         
@@ -2343,23 +2382,34 @@ init -998 python:
             self._last_menu_node = None
             self._last_match_info = None
             self._processing_menu = False
+            self._installed = False
             
         def install(self):
             """Install the menu wrapper"""
-            if self._original_menu is None:
+            if not self._installed:
                 self._original_menu = renpy.exports.menu
                 renpy.exports.menu = self._wrapped_menu
+                self._installed = True
                 urw_log.info("URW menu wrapper installed", "INIT")
                 
         def uninstall(self):
-            """Uninstall the menu wrapper"""
-            if self._original_menu is not None:
+            """Uninstall the menu wrapper - only call during development, not during quit"""
+            if self._installed and self._original_menu is not None:
                 renpy.exports.menu = self._original_menu
                 self._original_menu = None
+                self._installed = False
                 urw_log.info("URW menu wrapper uninstalled", "INIT")
+                
+        def safe_uninstall(self):
+            """Safe uninstall that doesn't interfere with ongoing operations"""
+            if not self._processing_menu and self._installed:
+                self.uninstall()
+            else:
+                # Schedule uninstall for later
+                urw_log.debug("Deferring menu wrapper uninstall", "CLEANUP")
         
         def _wrapped_menu(self, items, set_expr=None, args=None, kwargs=None, item_arguments=None, **extra_kwargs):
-            """Wrapped menu function - FIXED VERSION with widget stack protection"""
+            """Wrapped menu function - FIXED to handle QuitException properly"""
             if self._processing_menu:
                 return self._original_menu(items, set_expr, args, kwargs, item_arguments)
             
@@ -2376,6 +2426,9 @@ init -998 python:
                     result = self._original_menu(items, set_expr, args, kwargs, item_arguments)
                     self._processing_menu = False
                     return result
+                
+                # Store original items for fallback
+                original_items = items
                 
                 try:
                     if not isinstance(items, (list, tuple)):
@@ -2400,7 +2453,7 @@ init -998 python:
                 
                 if menu_node is None:
                     urw_log.warn("Could not find menu node", "MENU")
-                    result = self._original_menu(items, set_expr, args, kwargs, item_arguments)
+                    result = self._original_menu(original_items, set_expr, args, kwargs, item_arguments)
                     self._processing_menu = False
                     return result
                 
@@ -2415,18 +2468,29 @@ init -998 python:
                     cons = urw_processor.process_choice(menu_node, i, match_info)
                     choice_consequences.append(cons)
                 
-                enhanced_items = self._create_enhanced_items(items, choice_consequences)
+                # Only enhance items if we have consequences to show
+                should_enhance = False
+                for cons in choice_consequences:
+                    if cons:
+                        should_enhance = True
+                        break
+                
+                if should_enhance:
+                    enhanced_items = self._create_enhanced_items(items, choice_consequences)
+                else:
+                    enhanced_items = items
                 
                 self._force_clean_widget_state()
                 
-                # CRITICAL FIX: Try to catch and log any exceptions from the original menu
+                # Try enhanced items first, fall back to original if there's an error
                 try:
                     result = self._original_menu(enhanced_items, set_expr, args, kwargs, item_arguments)
-                except Exception as e:
-                    urw_log.error("Error in original menu call: {0}".format(str(e)), "MENU")
-                    # Fall back to original items if enhanced ones cause issues
+                except Exception as menu_error:
+                    # Don't log empty errors
+                    if str(menu_error):
+                        urw_log.error("Enhanced menu failed: {0}".format(str(menu_error)), "MENU")
                     urw_log.info("Falling back to original menu items", "MENU")
-                    result = self._original_menu(items, set_expr, args, kwargs, item_arguments)
+                    result = self._original_menu(original_items, set_expr, args, kwargs, item_arguments)
                 
                 if result is not None and result < len(choice_consequences):
                     cons = choice_consequences[result]
@@ -2437,19 +2501,22 @@ init -998 python:
                 self._processing_menu = False
                 return result
                 
+            except QuitException:
+                # Let QuitException propagate without interference
+                self._processing_menu = False
+                raise
+                
             except Exception as e:
-                urw_log.error("Error in wrapped menu: {0}".format(str(e)), "MENU")
-                import traceback
-                urw_log.error("Traceback: {0}".format(traceback.format_exc()), "MENU")
+                # Don't log empty errors
+                if str(e):
+                    urw_log.error("Error in wrapped menu: {0}".format(str(e)), "MENU")
                 self._processing_menu = False
                 self._force_clean_widget_state()
                 
-                # Try to recover by calling original menu
+                # Always return to original items on error
                 try:
-                    return self._original_menu(items, set_expr, args, kwargs, item_arguments)
-                except Exception as e2:
-                    urw_log.error("Even original menu failed: {0}".format(str(e2)), "MENU")
-                    # Last resort: create a simple menu
+                    return self._original_menu(original_items, set_expr, args, kwargs, item_arguments)
+                except:
                     return 0
         
         def _force_clean_widget_state(self):
@@ -2473,12 +2540,18 @@ init -998 python:
                 urw_log.debug("Widget cleanup error (non-critical): {0}".format(e), "MENU")
         
         def _create_enhanced_items(self, items, consequences):
-            """Create enhanced menu items with consequence hints - FIXED for pass statements"""
+            """Create enhanced menu items with consequence hints"""
             enhanced_items = []
             
             for i, item in enumerate(items):
                 try:
                     if isinstance(item, (list, tuple)):
+                        # FIXED: Preserve the exact structure including None blocks
+                        if len(item) >= 3 and item[2] is None:
+                            # This is a choice with a pass statement - preserve structure exactly
+                            enhanced_items.append(item)
+                            continue
+                        
                         if len(item) >= 1:
                             caption = item[0]
                             rest = item[1:] if len(item) > 1 else ()
@@ -2500,6 +2573,7 @@ init -998 python:
                                     if persistent.urw_stats:
                                         persistent.urw_stats['consequences_shown'] = persistent.urw_stats.get('consequences_shown', 0) + len(cons)
                                     
+                                    # FIXED: Preserve the original structure including the block
                                     if rest:
                                         enhanced_items.append((new_caption,) + tuple(rest))
                                     else:
@@ -2512,38 +2586,11 @@ init -998 python:
                             enhanced_items.append(item)
                             
                     elif hasattr(item, 'caption'):
-                        caption = item.caption
+                        # Don't modify objects with captions
+                        enhanced_items.append(item)
                         
-                        if self._is_ast_node(caption):
-                            urw_log.warn("Object caption is AST node, using original item", "MENU")
-                            enhanced_items.append(item)
-                            continue
-                        
-                        cons = consequences[i] if i < len(consequences) else []
-                        
-                        if cons:
-                            formatted = urw_formatter.format_for_urw_tag(cons)
-                            if formatted:
-                                # CRITICAL FIX: Use persistent.urw_text_size here
-                                size = persistent.urw_text_size
-                                new_caption = caption + "\n{{urw=size:{0},color:#888,prefix:WT: }}{1}{{/urw}}".format(size, formatted)
-                                
-                                if persistent.urw_stats:
-                                    persistent.urw_stats['consequences_shown'] = persistent.urw_stats.get('consequences_shown', 0) + len(cons)
-                                
-                                try:
-                                    import copy
-                                    new_item = copy.copy(item)
-                                    new_item.caption = new_caption
-                                    enhanced_items.append(new_item)
-                                except:
-                                    enhanced_items.append(new_caption)
-                            else:
-                                enhanced_items.append(item)
-                        else:
-                            enhanced_items.append(item)
-                            
                     else:
+                        # Handle simple items
                         caption = str(item) if item is not None else ""
                         
                         cons = consequences[i] if i < len(consequences) else []
@@ -2551,7 +2598,6 @@ init -998 python:
                         if cons:
                             formatted = urw_formatter.format_for_urw_tag(cons)
                             if formatted:
-                                # CRITICAL FIX: Use persistent.urw_text_size here
                                 size = persistent.urw_text_size
                                 new_caption = caption + "\n{{urw=size:{0},color:#888,prefix:WT: }}{1}{{/urw}}".format(size, formatted)
                                 
@@ -2566,12 +2612,13 @@ init -998 python:
                             
                 except Exception as e:
                     urw_log.error("Error enhancing item {0}: {1}".format(i, e), "MENU")
-                    # CRITICAL: Add the original item to prevent menu corruption
+                    # CRITICAL: Add the original item exactly as-is
                     enhanced_items.append(item)
             
             return enhanced_items
         
         def _is_ast_node(self, obj):
+            """Check if an object is an AST node"""
             if obj is None:
                 return False
             try:
@@ -2974,6 +3021,26 @@ init -998 python:
         except Exception as e:
             urw_log.error("Failed to save debug info: {0}".format(e), "DEBUG")
             renpy.notify("Failed to save: {0}".format(e))
+
+    ##################################################################
+    #                URW CLEANUP FUNCTIONS (FIXED)                   #
+    ##################################################################
+    
+    def urw_cleanup():
+        """Clean up URW resources before exit - SAFE version"""
+        urw_log.info("URW cleanup started", "CLEANUP")
+        
+        # Close any open URW screens
+        urw_close_all_screens()
+        
+        # Don't uninstall menu wrapper - it can cause issues during quit
+        # Just save persistent data
+        urw_force_save()
+        
+        urw_log.info("URW cleanup complete", "CLEANUP")
+
+    # Don't add to quit_callbacks to avoid interfering with quit process
+    # The cleanup will be handled differently
 
 init 0 python:
     # This runs AFTER persistent values are loaded from disk
@@ -4282,6 +4349,9 @@ screen URW_debug():
                     text_color "#000"
 
 init 999 python:
+    # DON'T add to config.quit_callbacks to avoid interfering with quit process
+    # The cleanup will be handled differently
+    
     # Add keyboard shortcut
     config.underlay.append(
         renpy.Keymap(
