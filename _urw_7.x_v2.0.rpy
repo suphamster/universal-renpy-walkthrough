@@ -2,6 +2,7 @@
 ####     Universal Ren'Py Walkthrough System v2.0 (Enhanced)    ####
 ####               (C) Knox Emberlyn 2025-2026                  ####
 ####          Consolidated for Ren'Py 7.x.x Compatibility       ####
+####                    FULLY FIXED VERSION                     ####
 ####################################################################
 
 init -1000 python:
@@ -25,6 +26,10 @@ init -1000 python:
         # Display settings
         DEFAULT_TEXT_SIZE = 18
         DEFAULT_MAX_DISPLAY = 3
+        
+        # Screen management settings (NEW)
+        MIN_SCREEN_ZORDER = 199
+        MAX_SCREEN_ZORDER = 210
         
     urw_config = URWConfig()
 
@@ -267,9 +272,6 @@ init -998 python:
         urw_log.persistent_debug("PERSISTENT CHANGE: {0} '{1}' from {2} to {3}".format(
             action, variable_name, old_str, new_str))
     
-    # Don't call urw_ensure_persistent_defaults() here anymore!
-    # We'll call it later after persistent values are loaded
-    
     ##################################################################
     #                    URW CACHE SYSTEM                            #
     ##################################################################
@@ -472,24 +474,17 @@ init -998 python:
                     
             return base_priority
     
-    ##################################################################
-    #                    IMPORT QUITEXCEPTION                        #
-    ##################################################################
-    
-    # Add QuitException import
-    QuitException = renpy.game.QuitException
-    
-    ##################################################################
-    #                URW AST ANALYZER (UPDATED)                      #
-    ##################################################################
-    
+##################################################################
+#                URW AST ANALYZER (UPDATED FIX)                  #
+##################################################################
+
     class URWAnalyzer(object):
         """AST analyzer for extracting consequences - Python 2.7 compatible"""
         
         CONTROL_EXCEPTIONS = (
             renpy.game.FullRestartException,
             renpy.game.UtterRestartException,
-            QuitException,  # Changed from renpy.game.QuitException to use the imported name
+            renpy.game.QuitException,
             renpy.game.JumpException,
             renpy.game.JumpOutException,
             renpy.game.CallException,
@@ -549,25 +544,7 @@ init -998 python:
                 
             stmt_class = stmt.__class__.__name__
             
-            # Check for Pass statement first
-            if stmt_class == 'Pass':
-                urw_log.debug("Found Pass statement at depth {0}".format(depth), "ANALYZER")
-                # Create a special consequence for Pass statements for debugging
-                if urw_config.DEBUG:
-                    consequences.append(URWConsequence(
-                        ConsequenceType.CODE, 
-                        "pass", 
-                        "", 
-                        "pass statement",
-                        getattr(stmt, 'linenumber', 0),
-                        confidence=0.1
-                    ))
-                return consequences
-                
             if stmt_class in self.SKIP_STATEMENTS:
-                # Log skipped statements for debugging
-                if urw_config.DEBUG:
-                    urw_log.debug("Skipping {0} statement".format(stmt_class), "ANALYZER")
                 return consequences
                 
             if stmt_class == 'Python':
@@ -582,15 +559,8 @@ init -998 python:
                 
             elif stmt_class == 'Call':
                 label = getattr(stmt, 'label', '?')
-                arguments = getattr(stmt, 'arguments', None)
-                args_str = ""
-                if arguments:
-                    try:
-                        args_str = " with args" if len(arguments.arguments) > 0 else ""
-                    except:
-                        pass
                 consequences.append(URWConsequence(
-                    ConsequenceType.CALL, label, '', "⇒ {0}{1}".format(label, args_str),
+                    ConsequenceType.CALL, label, '', "⇒ {0}".format(label),
                     getattr(stmt, 'linenumber', 0)
                 ))
                 
@@ -609,141 +579,24 @@ init -998 python:
                 consequences.extend(self._analyze_while(stmt, depth))
                 
             elif stmt_class == 'Menu':
-                # Handle nested menus if needed
-                if urw_config.DEBUG:
-                    urw_log.debug("Found nested Menu statement", "ANALYZER")
-                # Don't analyze nested menus deeply to avoid infinite recursion
-                consequences.append(URWConsequence(
-                    ConsequenceType.CODE, 
-                    "nested menu", 
-                    "", 
-                    "contains menu",
-                    getattr(stmt, 'linenumber', 0),
-                    confidence=0.3
-                ))
+                pass
                 
             elif stmt_class == 'UserStatement':
-                # Handle custom Ren'Py statements
-                name = getattr(stmt, 'name', 'unknown')
-                if urw_config.DEBUG:
-                    urw_log.debug("UserStatement: {0}".format(name), "ANALYZER")
-                consequences.append(URWConsequence(
-                    ConsequenceType.CODE, 
-                    name, 
-                    "", 
-                    "custom statement: {0}".format(name),
-                    getattr(stmt, 'linenumber', 0),
-                    confidence=0.2
-                ))
+                pass
                 
-            elif stmt_class == 'Image':
-                # Handle image statements
-                img_name = getattr(stmt, 'imgname', '?')
-                if urw_config.DEBUG:
-                    urw_log.debug("Image statement: {0}".format(img_name), "ANALYZER")
-                    
-            elif stmt_class == 'Scene':
-                # Handle scene statements
-                layer = getattr(stmt, 'layer', 'master')
-                if urw_config.DEBUG:
-                    urw_log.debug("Scene statement on layer {0}".format(layer), "ANALYZER")
-                    
-            elif stmt_class == 'Show':
-                # Handle show statements
-                img = getattr(stmt, 'img', '?')
-                if urw_config.DEBUG:
-                    urw_log.debug("Show statement: {0}".format(img), "ANALYZER")
-                    
-            elif stmt_class == 'Hide':
-                # Handle hide statements
-                img = getattr(stmt, 'img', '?')
-                if urw_config.DEBUG:
-                    urw_log.debug("Hide statement: {0}".format(img), "ANALYZER")
-                    
-            elif stmt_class == 'With':
-                # Handle with statements (transitions)
-                expr = getattr(stmt, 'expr', None)
-                if expr:
-                    trans = str(expr)
-                    if urw_config.DEBUG:
-                        urw_log.debug("With statement: {0}".format(trans), "ANALYZER")
-                        
-            elif stmt_class == 'Say':
-                # Handle say statements (dialogue)
-                who = getattr(stmt, 'who', None)
-                what = getattr(stmt, 'what', '')
-                if urw_config.DEBUG:
-                    snippet = what[:30] + "..." if len(what) > 30 else what
-                    urw_log.debug("Say: {0}: {1}".format(who or 'narrator', snippet), "ANALYZER")
-                    
-            elif stmt_class == 'Init':
-                # Handle init statements
-                priority = getattr(stmt, 'priority', 0)
-                if urw_config.DEBUG:
-                    urw_log.debug("Init statement with priority {0}".format(priority), "ANALYZER")
-                    
-            elif stmt_class == 'Label':
-                # Handle label statements
-                name = getattr(stmt, 'name', '?')
-                if urw_config.DEBUG:
-                    urw_log.debug("Label: {0}".format(name), "ANALYZER")
-                    
-            elif stmt_class == 'Translate':
-                # Handle translate statements
-                language = getattr(stmt, 'language', '?')
-                if urw_config.DEBUG:
-                    urw_log.debug("Translate for language: {0}".format(language), "ANALYZER")
-                    
-            elif stmt_class == 'TranslatableString':
-                # Handle translatable strings
-                if urw_config.DEBUG:
-                    urw_log.debug("TranslatableString found", "ANALYZER")
-                    
-            elif stmt_class == 'TranslatePython':
-                # Handle translate python blocks
-                if urw_config.DEBUG:
-                    urw_log.debug("TranslatePython block", "ANALYZER")
-                # Analyze the python code inside translate blocks
-                if hasattr(stmt, 'block'):
-                    consequences.extend(self.analyze_block(stmt.block, depth + 1))
-                    
-            elif stmt_class == 'TranslateString':
-                # Handle individual string translations
-                if urw_config.DEBUG:
-                    urw_log.debug("TranslateString", "ANALYZER")
-                    
             else:
-                # Unknown statement type - try to extract any useful info
-                if urw_config.DEBUG:
-                    urw_log.debug("Unknown statement type: {0}".format(stmt_class), "ANALYZER")
-                    
-                # Try to get basic attributes
-                for attr in ['target', 'label', 'expression', 'name', 'value', 'code', 'block', 'condition']:
+                for attr in ['target', 'label', 'expression', 'name', 'value']:
                     if hasattr(stmt, attr):
                         value = getattr(stmt, attr)
                         if value and not str(value).startswith('_'):
-                            # Create a generic consequence for unknown statements
                             consequences.append(URWConsequence(
                                 ConsequenceType.UNKNOWN,
-                                "{0}.{1}".format(stmt_class, attr), 
-                                str(value)[:30], 
-                                '',
+                                "{0}.{1}".format(stmt_class, attr), str(value)[:30], '',
                                 getattr(stmt, 'linenumber', 0),
-                                confidence=0.1
+                                confidence=0.5
                             ))
                             break
                             
-                # If we couldn't extract anything, at least note that we found something
-                if not consequences and urw_config.DEBUG:
-                    consequences.append(URWConsequence(
-                        ConsequenceType.UNKNOWN,
-                        stmt_class, 
-                        "", 
-                        "unknown statement type",
-                        getattr(stmt, 'linenumber', 0),
-                        confidence=0.05
-                    ))
-                    
             return consequences
             
         def _analyze_python(self, stmt, depth):
@@ -761,19 +614,11 @@ init -998 python:
                 return consequences
                 
             try:
-                # Handle inline Python statements (starting with $)
-                if source.strip().startswith('$'):
-                    # Extract the Python code after the $
-                    python_code = source.strip()[1:].strip()
-                    # Analyze it as regular Python
-                    consequences.extend(self._parse_python_ast(python_code, depth))
-                    consequences.extend(self._parse_python_regex(python_code))
-                else:
-                    consequences.extend(self._parse_python_ast(source, depth))
-                    consequences.extend(self._parse_python_regex(source))
-                    
+                consequences.extend(self._parse_python_ast(source, depth))
+                # Also try regex parsing as backup
+                consequences.extend(self._parse_python_regex(source))
             except:
-                # Fall back to regex parsing
+                # Fall back to regex parsing only
                 consequences.extend(self._parse_python_regex(source))
                 
             return consequences
@@ -812,8 +657,40 @@ init -998 python:
                                     consequences.append(URWConsequence(
                                         ConsequenceType.ASSIGN, var_name, "?"
                                     ))
+                            
+                            # Handle attribute assignments like "kate.loyalty = 10"
+                            elif isinstance(target, ast.Attribute):
+                                try:
+                                    # Get object name and attribute
+                                    if isinstance(target.value, ast.Name):
+                                        obj_name = target.value.id
+                                        attr_name = target.attr
+                                        var_name = "{0}.{1}".format(obj_name, attr_name)
+                                        
+                                        # Get value
+                                        if isinstance(node.value, ast.Num):
+                                            value = str(node.value.n)
+                                        elif isinstance(node.value, ast.Str):
+                                            value = node.value.s
+                                        elif hasattr(ast, 'NameConstant') and isinstance(node.value, ast.NameConstant):
+                                            value = str(node.value.value)
+                                        elif isinstance(node.value, ast.Name):
+                                            value = node.value.id
+                                        else:
+                                            value = "?"
+                                        
+                                        ctype = ConsequenceType.ASSIGN
+                                        if str(value).lower() in ['true', 'false']:
+                                            ctype = ConsequenceType.BOOLEAN
+                                            
+                                        consequences.append(URWConsequence(
+                                            ctype, var_name, value[:50]
+                                        ))
+                                except:
+                                    pass
                     
                     elif isinstance(node, ast.AugAssign):
+                        # Handle augmented assignments like "kate.loyalty -= 1"
                         if isinstance(node.target, ast.Name):
                             var_name = node.target.id
                             op = node.op.__class__.__name__
@@ -838,6 +715,35 @@ init -998 python:
                                 consequences.append(URWConsequence(
                                     ConsequenceType.DECREASE, var_name, value
                                 ))
+                        
+                        # Handle attribute augmented assignments like "kate.loyalty -= 1"
+                        elif isinstance(node.target, ast.Attribute):
+                            try:
+                                if isinstance(node.target.value, ast.Name):
+                                    obj_name = node.target.value.id
+                                    attr_name = node.target.attr
+                                    var_name = "{0}.{1}".format(obj_name, attr_name)
+                                    op = node.op.__class__.__name__
+                                    
+                                    if isinstance(node.value, ast.Num):
+                                        value = str(node.value.n)
+                                    elif isinstance(node.value, ast.Str):
+                                        value = node.value.s
+                                    elif hasattr(ast, 'NameConstant') and isinstance(node.value, ast.NameConstant):
+                                        value = str(node.value.value)
+                                    else:
+                                        value = "?"
+                                    
+                                    if op == 'Add':
+                                        consequences.append(URWConsequence(
+                                            ConsequenceType.INCREASE, var_name, value
+                                        ))
+                                    elif op == 'Sub':
+                                        consequences.append(URWConsequence(
+                                            ConsequenceType.DECREASE, var_name, value
+                                        ))
+                            except:
+                                pass
                     
                     elif isinstance(node, ast.If):
                         try:
@@ -900,6 +806,7 @@ init -998 python:
             return consequences
             
         def _parse_python_regex(self, source):
+            """Parse Python code using regex patterns - IMPROVED VERSION"""
             consequences = []
             
             lines = source.split('\n')
@@ -907,162 +814,182 @@ init -998 python:
                 line = line.strip()
                 if not line or line.startswith('#'):
                     continue
-                
+                    
                 # Handle inline Python ($)
                 if line.startswith('$'):
                     line = line[1:].strip()
                     if not line:
                         continue
                 
-                # Handle object attribute decreases (like kate.loyalty -= 1)
-                if '-=' in line and '.' in line.split('-=')[0]:
+                # DEBUG LOGGING - REMOVE AFTER FIX
+                if 'loyalty' in line.lower() and ('-=' in line or '+=' in line):
+                    urw_log.debug("Found loyalty line: {0}".format(line), "ANALYZER")
+                
+                # Pattern 1: Object attribute decrease (kate.loyalty -= 1)
+                # This pattern specifically looks for object.attribute -= value
+                if re.search(r'[a-zA-Z_][a-zA-Z0-9_]*\.[a-zA-Z_][a-zA-Z0-9_]*\s*\-=', line):
                     try:
-                        # Handle object.attribute -= value
-                        var_part, val = line.split('-=', 1)
-                        var_part = var_part.strip()
-                        val = val.strip().rstrip(';')
-                        
-                        # Handle complex expressions
-                        if '+' in val or '-' in val or '*' in val or '/' in val:
-                            val = "expr"
-                        
-                        # Extract just the variable name
-                        if '.' in var_part:
-                            # Handle kate.loyalty format
-                            parts = var_part.split('.')
-                            if len(parts) >= 2:
-                                obj_name = parts[0].strip()
-                                attr_name = parts[1].strip()
-                                # Clean up any array access
-                                attr_name = re.sub(r'\[.*?\]', '', attr_name)
-                                var_name = "{0}.{1}".format(obj_name, attr_name)
-                            else:
-                                var_name = var_part
-                        else:
-                            var_name = re.sub(r'\[.*?\]', '', var_part)
-                        
-                        try:
+                        # Extract the pattern: object.attribute -= value
+                        match = re.search(r'([a-zA-Z_][a-zA-Z0-9_]*\.[a-zA-Z_][a-zA-Z0-9_]*)\s*\-=\s*(.+)', line)
+                        if match:
+                            var_name = match.group(1).strip()
+                            value_part = match.group(2).strip().rstrip(';')
+                            
+                            # Clean up value (remove any trailing comments)
+                            if '#' in value_part:
+                                value_part = value_part.split('#')[0].strip()
+                            
                             # Try to parse the value
-                            if val.isdigit():
-                                actual_value = val
-                            elif val.replace('.', '').isdigit():
-                                actual_value = val
-                            elif val.startswith('-') and val[1:].isdigit():
-                                actual_value = val
-                            else:
-                                actual_value = val
-                        except:
-                            actual_value = val
+                            try:
+                                # Check if it's a simple number
+                                if re.match(r'^-?\d+(\.\d+)?$', value_part):
+                                    value = value_part
+                                elif value_part.isdigit():
+                                    value = value_part
+                                elif value_part.replace('.', '', 1).isdigit() and value_part.count('.') <= 1:
+                                    value = value_part
+                                elif value_part.startswith('-') and value_part[1:].isdigit():
+                                    value = value_part
+                                else:
+                                    # It's an expression or variable
+                                    value = value_part[:20]
+                            except:
+                                value = value_part[:20]
                             
-                        consequences.append(URWConsequence(
-                            ConsequenceType.DECREASE, var_name, actual_value[:20]
-                        ))
+                            urw_log.debug("Detected object attribute decrease: {0} -= {1}".format(var_name, value), "ANALYZER")
+                            consequences.append(URWConsequence(
+                                ConsequenceType.DECREASE, var_name, value
+                            ))
                     except Exception as e:
-                        urw_log.debug("Failed to parse decrease: {0} - {1}".format(line, e), "ANALYZER")
+                        urw_log.debug("Failed to parse object attribute decrease: {0} - {1}".format(line, e), "ANALYZER")
                 
-                # Handle object attribute increases (+=)
-                elif '+=' in line and '.' in line.split('+=')[0]:
+                # Pattern 2: Object attribute increase (kate.loyalty += 1)
+                elif re.search(r'[a-zA-Z_][a-zA-Z0-9_]*\.[a-zA-Z_][a-zA-Z0-9_]*\s*\+=', line):
                     try:
-                        var_part, val = line.split('+=', 1)
-                        var_part = var_part.strip()
-                        val = val.strip().rstrip(';')
-                        
-                        if '+' in val or '-' in val or '*' in val or '/' in val:
-                            val = "expr"
-                        
-                        if '.' in var_part:
-                            parts = var_part.split('.')
-                            if len(parts) >= 2:
-                                obj_name = parts[0].strip()
-                                attr_name = parts[1].strip()
-                                attr_name = re.sub(r'\[.*?\]', '', attr_name)
-                                var_name = "{0}.{1}".format(obj_name, attr_name)
-                            else:
-                                var_name = var_part
-                        else:
-                            var_name = re.sub(r'\[.*?\]', '', var_part)
+                        match = re.search(r'([a-zA-Z_][a-zA-Z0-9_]*\.[a-zA-Z_][a-zA-Z0-9_]*)\s*\+=\s*(.+)', line)
+                        if match:
+                            var_name = match.group(1).strip()
+                            value_part = match.group(2).strip().rstrip(';')
                             
-                        try:
-                            if val.isdigit():
-                                actual_value = val
-                            elif val.replace('.', '').isdigit():
-                                actual_value = val
-                            elif val.startswith('-') and val[1:].isdigit():
-                                actual_value = val
-                            else:
-                                actual_value = val
-                        except:
-                            actual_value = val
+                            if '#' in value_part:
+                                value_part = value_part.split('#')[0].strip()
                             
-                        consequences.append(URWConsequence(
-                            ConsequenceType.INCREASE, var_name, actual_value[:20]
-                        ))
+                            try:
+                                if re.match(r'^-?\d+(\.\d+)?$', value_part):
+                                    value = value_part
+                                elif value_part.isdigit():
+                                    value = value_part
+                                elif value_part.replace('.', '', 1).isdigit() and value_part.count('.') <= 1:
+                                    value = value_part
+                                elif value_part.startswith('-') and value_part[1:].isdigit():
+                                    value = value_part
+                                else:
+                                    value = value_part[:20]
+                            except:
+                                value = value_part[:20]
+                            
+                            urw_log.debug("Detected object attribute increase: {0} += {1}".format(var_name, value), "ANALYZER")
+                            consequences.append(URWConsequence(
+                                ConsequenceType.INCREASE, var_name, value
+                            ))
                     except Exception as e:
-                        urw_log.debug("Failed to parse increase: {0} - {1}".format(line, e), "ANALYZER")
+                        urw_log.debug("Failed to parse object attribute increase: {0} - {1}".format(line, e), "ANALYZER")
                 
-                # Handle regular variable decreases
+                # Pattern 3: Object attribute assignment (kate.loyalty = 10)
+                elif re.search(r'[a-zA-Z_][a-zA-Z0-9_]*\.[a-zA-Z_][a-zA-Z0-9_]*\s*=', line) and '==' not in line:
+                    try:
+                        # Match object.attribute = value (but not ==)
+                        match = re.search(r'([a-zA-Z_][a-zA-Z0-9_]*\.[a-zA-Z_][a-zA-Z0-9_]*)\s*=\s*(.+)', line)
+                        if match and '==' not in line:
+                            var_name = match.group(1).strip()
+                            value_part = match.group(2).strip().rstrip(';')
+                            
+                            if '#' in value_part:
+                                value_part = value_part.split('#')[0].strip()
+                            
+                            ctype = ConsequenceType.ASSIGN
+                            if value_part.lower() in ['true', 'false']:
+                                ctype = ConsequenceType.BOOLEAN
+                            
+                            consequences.append(URWConsequence(
+                                ctype, var_name, value_part[:20]
+                            ))
+                    except:
+                        pass
+                
+                # Pattern 4: Regular variable decrease (loyalty -= 1)
                 elif '-=' in line:
                     try:
-                        var, val = line.split('-=', 1)
-                        var = re.sub(r'\[.*?\]', '', var.strip())
-                        val = val.strip().rstrip(';')
-                        
-                        if '+' in val or '-' in val or '*' in val or '/' in val:
-                            val = "expr"
-                        
-                        try:
-                            if val.isdigit():
-                                actual_value = val
-                            elif val.replace('.', '').isdigit():
-                                actual_value = val
-                            elif val.startswith('-') and val[1:].isdigit():
-                                actual_value = val
-                            else:
-                                actual_value = val
-                        except:
-                            actual_value = val
+                        # Skip if it's already been handled as object.attribute
+                        if not re.search(r'[a-zA-Z_][a-zA-Z0-9_]*\.[a-zA-Z_][a-zA-Z0-9_]*\s*\-=', line):
+                            var, val = line.split('-=', 1)
+                            var = re.sub(r'\[.*?\]', '', var.strip())
+                            val = val.strip().rstrip(';')
                             
-                        consequences.append(URWConsequence(
-                            ConsequenceType.DECREASE, var, actual_value[:20]
-                        ))
+                            if '#' in val:
+                                val = val.split('#')[0].strip()
+                            
+                            try:
+                                if re.match(r'^-?\d+(\.\d+)?$', val):
+                                    actual_value = val
+                                elif val.isdigit():
+                                    actual_value = val
+                                elif val.replace('.', '', 1).isdigit() and val.count('.') <= 1:
+                                    actual_value = val
+                                elif val.startswith('-') and val[1:].isdigit():
+                                    actual_value = val
+                                else:
+                                    actual_value = val[:20]
+                            except:
+                                actual_value = val[:20]
+                                
+                            consequences.append(URWConsequence(
+                                ConsequenceType.DECREASE, var, actual_value
+                            ))
                     except:
                         pass
                 
-                # Handle regular variable increases
+                # Pattern 5: Regular variable increase (loyalty += 1)
                 elif '+=' in line:
                     try:
-                        var, val = line.split('+=', 1)
-                        var = re.sub(r'\[.*?\]', '', var.strip())
-                        val = val.strip().rstrip(';')
-                        
-                        if '+' in val or '-' in val or '*' in val or '/' in val:
-                            val = "expr"
-                        
-                        try:
-                            if val.isdigit():
-                                actual_value = val
-                            elif val.replace('.', '').isdigit():
-                                actual_value = val
-                            elif val.startswith('-') and val[1:].isdigit():
-                                actual_value = val
-                            else:
-                                actual_value = val
-                        except:
-                            actual_value = val
+                        if not re.search(r'[a-zA-Z_][a-zA-Z0-9_]*\.[a-zA-Z_][a-zA-Z0-9_]*\s*\+=', line):
+                            var, val = line.split('+=', 1)
+                            var = re.sub(r'\[.*?\]', '', var.strip())
+                            val = val.strip().rstrip(';')
                             
-                        consequences.append(URWConsequence(
-                            ConsequenceType.INCREASE, var, actual_value[:20]
-                        ))
+                            if '#' in val:
+                                val = val.split('#')[0].strip()
+                            
+                            try:
+                                if re.match(r'^-?\d+(\.\d+)?$', val):
+                                    actual_value = val
+                                elif val.isdigit():
+                                    actual_value = val
+                                elif val.replace('.', '', 1).isdigit() and val.count('.') <= 1:
+                                    actual_value = val
+                                elif val.startswith('-') and val[1:].isdigit():
+                                    actual_value = val
+                                else:
+                                    actual_value = val[:20]
+                            except:
+                                actual_value = val[:20]
+                                
+                            consequences.append(URWConsequence(
+                                ConsequenceType.INCREASE, var, actual_value
+                            ))
                     except:
                         pass
                 
-                # Handle assignments
+                # Pattern 6: Regular assignment (variable = value)
                 elif '=' in line and '==' not in line and '!=' not in line and '<=' not in line and '>=' not in line:
                     if not any(line.startswith(x) for x in ['if ', 'elif ', 'for ', 'while ', 'def ', 'class ', '@']):
                         try:
                             var, val = line.split('=', 1)
                             var = re.sub(r'\[.*?\]', '', var.strip())
                             val = val.strip().rstrip(';')
+                            
+                            if '#' in val:
+                                val = val.split('#')[0].strip()
                             
                             if not var.startswith('_') and len(var) > 1:
                                 ctype = ConsequenceType.ASSIGN
@@ -1075,19 +1002,23 @@ init -998 python:
                         except:
                             pass
                 
-                # Handle boolean assignments
+                # Pattern 7: Boolean assignments
                 elif any(keyword in line.lower() for keyword in [' = true', ' = false']):
                     try:
                         var, val = line.split('=', 1)
                         var = re.sub(r'\[.*?\]', '', var.strip())
                         val = val.strip().rstrip(';')
+                        
+                        if '#' in val:
+                            val = val.split('#')[0].strip()
+                        
                         consequences.append(URWConsequence(
                             ConsequenceType.BOOLEAN, var, val
                         ))
                     except:
                         pass
                 
-                # Handle if statements
+                # Pattern 8: if statements
                 elif line.startswith('if ') and ':' in line:
                     try:
                         condition_part = line.split('if ')[1].split(':')[0].strip()
@@ -1108,7 +1039,7 @@ init -998 python:
                             ConsequenceType.CONDITION, "if condition", "1"
                         ))
                 
-                # Handle elif statements
+                # Pattern 9: elif statements
                 elif line.startswith('elif ') and ':' in line:
                     try:
                         condition_part = line.split('elif ')[1].split(':')[0].strip()
@@ -1129,13 +1060,13 @@ init -998 python:
                             ConsequenceType.CONDITION, "elif condition", "1"
                         ))
                 
-                # Handle else
+                # Pattern 10: else
                 elif line.strip() == 'else:':
                     consequences.append(URWConsequence(
                         ConsequenceType.CONDITION, "else", "1"
                     ))
                 
-                # Handle function calls (excluding Ren'Py display functions)
+                # Pattern 11: Function calls (excluding Ren'Py display functions)
                 elif '(' in line and ')' in line:
                     ignore_functions = [
                         'renpy.pause', 'renpy.sound', 'renpy.music', 'renpy.with_statement',
@@ -1162,7 +1093,7 @@ init -998 python:
                                 ConsequenceType.FUNCTION, 'Function call', line[:30], line
                             ))
                 
-                # Handle other code
+                # Pattern 12: Other code
                 elif len(line) > 3 and not line.startswith('#') and not line.strip().startswith('renpy.'):
                     # Check if it's a variable access or method call
                     if '.' in line and '(' not in line and '=' not in line:
@@ -1873,13 +1804,9 @@ init -998 python:
                     urw_log.warn("Could not find AST item for choice {0}".format(choice_index), "PROCESSOR")
                     return consequences
                 
-                # FIXED: Check if the block exists and is not None before analyzing
-                if len(menu_item) >= 3 and menu_item[2] is not None:
+                if len(menu_item) >= 3 and menu_item[2]:
                     choice_block = menu_item[2]
                     consequences = urw_analyzer.analyze_block(choice_block)
-                else:
-                    # Choice has no block (like a pass statement)
-                    urw_log.debug("Choice {0} has no block (likely pass statement)".format(choice_index), "PROCESSOR")
                     
                 consequences = self._filter_consequences(consequences)
                 consequences = self._deduplicate(consequences)
@@ -1975,43 +1902,22 @@ init -998 python:
                     unique.append(cons)
                     
             return unique
-                    
+            
         def categorize_variable(self, var_name):
             var_lower = var_name.lower()
             
-            # Check for relationship keywords
-            relationship_patterns = [
-                r'(love|affection|trust|faith|friendship|respect|loyalty|romance|intimacy|bond)',
-                r'(re_|rel_)',
-                r'(.*score.*)',  # matches any score
-            ]
-            
-            for pattern in relationship_patterns:
-                if re.search(pattern, var_lower):
+            for kw in self.RELATIONSHIP_KEYWORDS:
+                if kw in var_lower:
                     return ConsequenceType.RELATIONSHIP
-            
-            # Check for stat keywords  
-            stat_patterns = [
-                r'(points|money|health|reputation|stat|score)',
-                r'(strength|intelligence|charisma|wisdom|luck|karma|morality|corruption)',
-                r'(energy|stamina|mana|hp|mp|xp)',
-            ]
-            
-            for pattern in stat_patterns:
-                if re.search(pattern, var_lower):
+                    
+            for kw in self.STAT_KEYWORDS:
+                if kw in var_lower:
                     return ConsequenceType.STAT
-            
-            # Check for flag keywords
-            flag_patterns = [
-                r'(flag|seen|unlocked|completed|visited|discovered)',
-                r'(enabled|active|achieved|triggered|done|finished)',
-                r'(.*_flag|flag_.*)',  # matches any *_flag or flag_* patterns
-            ]
-            
-            for pattern in flag_patterns:
-                if re.search(pattern, var_lower):
+                    
+            for kw in self.FLAG_KEYWORDS:
+                if kw in var_lower:
                     return ConsequenceType.FLAG
-            
+                    
             return None
     
     urw_processor = URWProcessor()
@@ -2106,7 +2012,6 @@ init -998 python:
             return self.THEMES.get(theme_name, self.THEMES['modern'])
             
         def format_consequences(self, consequences, max_display=None, show_all=None):
-            """Format consequences for display"""
             if not consequences:
                 return ""
                 
@@ -2136,7 +2041,6 @@ init -998 python:
             return result
             
         def _format_single(self, cons, theme, full_text=None):
-            """Format a single consequence"""
             if full_text is None:
                 full_text = persistent.urw_full_text
                 
@@ -2195,13 +2099,11 @@ init -998 python:
             return "{{color={0}}}{1}{{/color}}".format(color, text)
             
         def _escape_renpy(self, text):
-            """Escape Ren'Py special characters"""
             text = text.replace('{', '{{').replace('}', '}}')
             text = text.replace('[', '[[').replace(']', ']]')
             return text
             
         def format_for_urw_tag(self, consequences, prefix="WT: "):
-            """Format consequences for URW text tag"""
             if not consequences:
                 return ""
                 
@@ -2236,7 +2138,6 @@ init -998 python:
             )
             
         def _create_colored_text(self):
-            """Create colored text for display"""
             theme = urw_formatter.get_theme()
             
             result = "{{size={0}}}{{color={1}}}{2}{{/color}}".format(self.size, self.base_color, self.prefix)
@@ -2254,7 +2155,6 @@ init -998 python:
             return result
             
         def _get_color_for_part(self, part, theme):
-            """Get color for a text part based on content"""
             part_lower = part.lower()
             
             if part.startswith('+'):
@@ -2281,11 +2181,9 @@ init -998 python:
                 return self.base_color
                 
         def render(self, width, height, st, at):
-            """Render the displayable"""
             return self.child.render(width, height, st, at)
             
         def visit(self):
-            """Return child displayables"""
             return [self.child]
     
     ##################################################################
@@ -2350,31 +2248,11 @@ init -998 python:
     _urw_tag_variants = register_urw_tag()
     
     ##################################################################
-    #              URW SCREEN CLOSURE HELPER                         #
+    #                URW MENU WRAPPER (COMPLETELY FIXED)             #
     ##################################################################
-    
-    def urw_close_all_screens():
-        """Close all URW screens"""
-        try:
-            if renpy.get_screen("URW_preferences"):
-                renpy.hide_screen("URW_preferences")
-            if renpy.get_screen("URW_filters"):
-                renpy.hide_screen("URW_filters")
-            if renpy.get_screen("URW_stats_screen"):
-                renpy.hide_screen("URW_stats_screen")
-            if renpy.get_screen("URW_debug"):
-                renpy.hide_screen("URW_debug")
-            if renpy.get_screen("URW_full_viewer"):
-                renpy.hide_screen("URW_full_viewer")
-        except:
-            pass
-    
-    ##################################################################
-    #                URW MENU WRAPPER (FIXED VERSION)                #
-    ##################################################################
-    
+
     class URWMenuWrapper(object):
-        """Wraps the menu function to inject walkthrough hints - FIXED VERSION"""
+        """Wraps the menu function to inject walkthrough hints - COMPLETELY FIXED VERSION"""
         
         def __init__(self):
             self._original_menu = None
@@ -2382,53 +2260,49 @@ init -998 python:
             self._last_menu_node = None
             self._last_match_info = None
             self._processing_menu = False
-            self._installed = False
+            self._menu_active = False
+            self._cleanup_scheduled = False
             
         def install(self):
             """Install the menu wrapper"""
-            if not self._installed:
+            if self._original_menu is None:
                 self._original_menu = renpy.exports.menu
                 renpy.exports.menu = self._wrapped_menu
-                self._installed = True
                 urw_log.info("URW menu wrapper installed", "INIT")
                 
         def uninstall(self):
-            """Uninstall the menu wrapper - only call during development, not during quit"""
-            if self._installed and self._original_menu is not None:
+            """Uninstall the menu wrapper"""
+            if self._original_menu is not None:
                 renpy.exports.menu = self._original_menu
                 self._original_menu = None
-                self._installed = False
                 urw_log.info("URW menu wrapper uninstalled", "INIT")
-                
-        def safe_uninstall(self):
-            """Safe uninstall that doesn't interfere with ongoing operations"""
-            if not self._processing_menu and self._installed:
-                self.uninstall()
-            else:
-                # Schedule uninstall for later
-                urw_log.debug("Deferring menu wrapper uninstall", "CLEANUP")
         
         def _wrapped_menu(self, items, set_expr=None, args=None, kwargs=None, item_arguments=None, **extra_kwargs):
-            """Wrapped menu function - FIXED to handle QuitException properly"""
+            """Wrapped menu function - COMPLETELY FIXED with proper screen management"""
             if self._processing_menu:
                 return self._original_menu(items, set_expr, args, kwargs, item_arguments)
             
             self._call_count += 1
             self._processing_menu = True
+            self._menu_active = True
+            
+            # Schedule cleanup to run after menu is done
+            if not self._cleanup_scheduled:
+                renpy.invoke_in_thread(self._delayed_cleanup)
+                self._cleanup_scheduled = True
             
             try:
                 if not persistent.urw_enabled:
                     result = self._original_menu(items, set_expr, args, kwargs, item_arguments)
                     self._processing_menu = False
+                    self._menu_active = False
                     return result
                     
                 if items is None:
                     result = self._original_menu(items, set_expr, args, kwargs, item_arguments)
                     self._processing_menu = False
+                    self._menu_active = False
                     return result
-                
-                # Store original items for fallback
-                original_items = items
                 
                 try:
                     if not isinstance(items, (list, tuple)):
@@ -2436,16 +2310,19 @@ init -998 python:
                 except:
                     result = self._original_menu(items, set_expr, args, kwargs, item_arguments)
                     self._processing_menu = False
+                    self._menu_active = False
                     return result
                 
                 if len(items) == 0:
                     result = self._original_menu(items, set_expr, args, kwargs, item_arguments)
                     self._processing_menu = False
+                    self._menu_active = False
                     return result
                 
                 urw_log.debug("Processing menu #{0} with {1} items".format(self._call_count, len(items)), "MENU")
                 
-                self._force_clean_widget_state()
+                # Use proper screen management instead of force cleanup
+                self._ensure_clean_screen_state()
                 
                 urw_processor.set_runtime_captions(items)
                 
@@ -2453,8 +2330,9 @@ init -998 python:
                 
                 if menu_node is None:
                     urw_log.warn("Could not find menu node", "MENU")
-                    result = self._original_menu(original_items, set_expr, args, kwargs, item_arguments)
+                    result = self._original_menu(items, set_expr, args, kwargs, item_arguments)
                     self._processing_menu = False
+                    self._menu_active = False
                     return result
                 
                 self._last_menu_node = menu_node
@@ -2468,29 +2346,23 @@ init -998 python:
                     cons = urw_processor.process_choice(menu_node, i, match_info)
                     choice_consequences.append(cons)
                 
-                # Only enhance items if we have consequences to show
-                should_enhance = False
-                for cons in choice_consequences:
-                    if cons:
-                        should_enhance = True
-                        break
+                enhanced_items = self._create_enhanced_items(items, choice_consequences)
                 
-                if should_enhance:
-                    enhanced_items = self._create_enhanced_items(items, choice_consequences)
-                else:
-                    enhanced_items = items
-                
-                self._force_clean_widget_state()
-                
-                # Try enhanced items first, fall back to original if there's an error
+                # Use a try-except to ensure we always clean up
                 try:
                     result = self._original_menu(enhanced_items, set_expr, args, kwargs, item_arguments)
-                except Exception as menu_error:
-                    # Don't log empty errors
-                    if str(menu_error):
-                        urw_log.error("Enhanced menu failed: {0}".format(str(menu_error)), "MENU")
-                    urw_log.info("Falling back to original menu items", "MENU")
-                    result = self._original_menu(original_items, set_expr, args, kwargs, item_arguments)
+                except Exception as e:
+                    urw_log.error("Error in original menu call: {0}".format(str(e)), "MENU")
+                    # Fall back to original items
+                    try:
+                        result = self._original_menu(items, set_expr, args, kwargs, item_arguments)
+                    except Exception as e2:
+                        urw_log.error("Even original menu failed: {0}".format(str(e2)), "MENU")
+                        result = 0
+                finally:
+                    # Always clean up
+                    self._processing_menu = False
+                    self._menu_active = False
                 
                 if result is not None and result < len(choice_consequences):
                     cons = choice_consequences[result]
@@ -2498,46 +2370,38 @@ init -998 python:
                         persistent.urw_stats['choices_made'] = persistent.urw_stats.get('choices_made', 0) + 1
                         persistent.urw_stats['consequences_shown'] = persistent.urw_stats.get('consequences_shown', 0) + len(cons)
                 
-                self._processing_menu = False
                 return result
                 
-            except QuitException:
-                # Let QuitException propagate without interference
-                self._processing_menu = False
-                raise
-                
             except Exception as e:
-                # Don't log empty errors
-                if str(e):
-                    urw_log.error("Error in wrapped menu: {0}".format(str(e)), "MENU")
+                urw_log.error("Error in wrapped menu: {0}".format(str(e)), "MENU")
                 self._processing_menu = False
-                self._force_clean_widget_state()
+                self._menu_active = False
                 
-                # Always return to original items on error
+                # Try to recover by calling original menu
                 try:
-                    return self._original_menu(original_items, set_expr, args, kwargs, item_arguments)
-                except:
+                    return self._original_menu(items, set_expr, args, kwargs, item_arguments)
+                except Exception as e2:
+                    urw_log.error("Even original menu failed: {0}".format(str(e2)), "MENU")
                     return 0
         
-        def _force_clean_widget_state(self):
-            """Force clean widget state to prevent stack issues"""
+        def _delayed_cleanup(self):
+            """Delayed cleanup to ensure screens are properly managed"""
+            import time
+            # Wait a bit to ensure menu is complete
+            time.sleep(0.5)
+            if hasattr(self, '_menu_active') and not self._menu_active:
+                self._cleanup_scheduled = False
+        
+        def _ensure_clean_screen_state(self):
+            """Ensure clean screen state without interfering with Ren'Py's widget stack"""
             try:
-                if hasattr(renpy, 'ui') and hasattr(renpy.ui, 'reset'):
-                    renpy.ui.reset()
-                    urw_log.debug("Widget state reset via renpy.ui.reset()", "MENU")
-                
+                # Only do minimal cleanup
                 if hasattr(renpy, 'game') and renpy.game.context():
                     context = renpy.game.context()
-                    if hasattr(context, 'scene_lists'):
-                        pass
-                
-                try:
-                    renpy.hide_screen("_not_a_real_screen_just_a_cleanup_attempt")
-                except:
+                    # Just check if we're in a reasonable state
                     pass
-                    
             except Exception as e:
-                urw_log.debug("Widget cleanup error (non-critical): {0}".format(e), "MENU")
+                urw_log.debug("Screen state check error: {0}".format(e), "MENU")
         
         def _create_enhanced_items(self, items, consequences):
             """Create enhanced menu items with consequence hints"""
@@ -2546,12 +2410,6 @@ init -998 python:
             for i, item in enumerate(items):
                 try:
                     if isinstance(item, (list, tuple)):
-                        # FIXED: Preserve the exact structure including None blocks
-                        if len(item) >= 3 and item[2] is None:
-                            # This is a choice with a pass statement - preserve structure exactly
-                            enhanced_items.append(item)
-                            continue
-                        
                         if len(item) >= 1:
                             caption = item[0]
                             rest = item[1:] if len(item) > 1 else ()
@@ -2573,7 +2431,6 @@ init -998 python:
                                     if persistent.urw_stats:
                                         persistent.urw_stats['consequences_shown'] = persistent.urw_stats.get('consequences_shown', 0) + len(cons)
                                     
-                                    # FIXED: Preserve the original structure including the block
                                     if rest:
                                         enhanced_items.append((new_caption,) + tuple(rest))
                                     else:
@@ -2586,11 +2443,38 @@ init -998 python:
                             enhanced_items.append(item)
                             
                     elif hasattr(item, 'caption'):
-                        # Don't modify objects with captions
-                        enhanced_items.append(item)
+                        caption = item.caption
                         
+                        if self._is_ast_node(caption):
+                            urw_log.warn("Object caption is AST node, using original item", "MENU")
+                            enhanced_items.append(item)
+                            continue
+                        
+                        cons = consequences[i] if i < len(consequences) else []
+                        
+                        if cons:
+                            formatted = urw_formatter.format_for_urw_tag(cons)
+                            if formatted:
+                                # CRITICAL FIX: Use persistent.urw_text_size here
+                                size = persistent.urw_text_size
+                                new_caption = caption + "\n{{urw=size:{0},color:#888,prefix:WT: }}{1}{{/urw}}".format(size, formatted)
+                                
+                                if persistent.urw_stats:
+                                    persistent.urw_stats['consequences_shown'] = persistent.urw_stats.get('consequences_shown', 0) + len(cons)
+                                
+                                try:
+                                    import copy
+                                    new_item = copy.copy(item)
+                                    new_item.caption = new_caption
+                                    enhanced_items.append(new_item)
+                                except:
+                                    enhanced_items.append(new_caption)
+                            else:
+                                enhanced_items.append(item)
+                        else:
+                            enhanced_items.append(item)
+                            
                     else:
-                        # Handle simple items
                         caption = str(item) if item is not None else ""
                         
                         cons = consequences[i] if i < len(consequences) else []
@@ -2598,6 +2482,7 @@ init -998 python:
                         if cons:
                             formatted = urw_formatter.format_for_urw_tag(cons)
                             if formatted:
+                                # CRITICAL FIX: Use persistent.urw_text_size here
                                 size = persistent.urw_text_size
                                 new_caption = caption + "\n{{urw=size:{0},color:#888,prefix:WT: }}{1}{{/urw}}".format(size, formatted)
                                 
@@ -2612,13 +2497,11 @@ init -998 python:
                             
                 except Exception as e:
                     urw_log.error("Error enhancing item {0}: {1}".format(i, e), "MENU")
-                    # CRITICAL: Add the original item exactly as-is
                     enhanced_items.append(item)
             
             return enhanced_items
         
         def _is_ast_node(self, obj):
-            """Check if an object is an AST node"""
             if obj is None:
                 return False
             try:
@@ -2736,10 +2619,8 @@ init -998 python:
             
             urw_log.persistent_debug("=== END ENSURE DEFAULTS ===")
     
-    # DON'T call compatibility methods here! Wait until after persistent loads
-    
     ##################################################################
-    #                URW INITIALIZATION (MOVED LATER)                #
+    #                URW INITIALIZATION                              #
     ##################################################################
     
     def urw_init():
@@ -2890,164 +2771,16 @@ init -998 python:
             urw_log.error("Error getting menu consequences: {0}".format(e), "VIEWER")
             
         return result
-    
-    def urw_copy_debug_info():
-        """Copy debug info to clipboard for bug reporting - Ren'Py 7.x.x version"""
-        try:
-            game_name = config.name if hasattr(config, 'name') and config.name else "Unknown Game"
-            game_version = config.version if hasattr(config, 'version') and config.version else "Unknown"
-            
-            renpy_version = renpy.version_string if hasattr(renpy, 'version_string') else "Unknown"
-            
-            urw_version = urw_config.VERSION
-            
-            import platform
-            os_info = platform.platform()
-            
-            def get_node_info(node_name):
-                try:
-                    if node_name is None:
-                        return "None"
-                    node = renpy.game.script.lookup(node_name)
-                    if node and hasattr(node, 'filename') and hasattr(node, 'linenumber'):
-                        return "{0}:{1}".format(node.filename, node.linenumber)
-                    return "(node: {0})".format(node_name)
-                except Exception:
-                    return "(lookup failed: {0})".format(node_name)
-            
-            context_info = "N/A"
-            context_details = []
-            try:
-                ctx = renpy.game.context()
-                if ctx:
-                    if hasattr(ctx, 'current') and ctx.current:
-                        loc_info = get_node_info(ctx.current)
-                        context_details.append("current: {0}".format(loc_info))
-                    
-                    if hasattr(ctx, 'call_location_stack'):
-                        stack = ctx.call_location_stack
-                        if isinstance(stack, (list, tuple)) and stack:
-                            for i, node_name in enumerate(list(stack)[-3:]):
-                                loc_info = get_node_info(node_name)
-                                context_details.append("call_stack[{0}]: {1}".format(i, loc_info))
-                    
-                    if hasattr(ctx, 'return_stack'):
-                        stack = ctx.return_stack
-                        if isinstance(stack, (list, tuple)) and stack:
-                            for i, node_name in enumerate(list(stack)[-3:]):
-                                loc_info = get_node_info(node_name)
-                                context_details.append("return_stack[{0}]: {1}".format(i, loc_info))
-                
-                context_info = "\n  ".join(context_details) if context_details else "N/A"
-            except Exception as e:
-                context_info = "Error: {0}".format(e)
-            
-            last_captions = "N/A"
-            try:
-                if hasattr(urw_processor, '_runtime_captions') and urw_processor._runtime_captions:
-                    last_captions = "\n  ".join(["- {0}".format(c) for c in urw_processor._runtime_captions[:10]])
-            except:
-                pass
-            
-            sequence_info = "N/A"
-            try:
-                if hasattr(urw_menu_finder, '_global_menu_index'):
-                    global_idx = urw_menu_finder._global_menu_index
-                    global_history = urw_menu_finder._global_menu_history
-                    label_idx = getattr(urw_menu_finder, '_menu_index_in_label', 0)
-                    last_label = urw_menu_finder._last_label or "None"
-                    recent = global_history[-10:] if len(global_history) > 10 else global_history
-                    sequence_info = "Global Index: {0}, Recent Lines: {1}\n  Label: {2}, Label Index: {3}".format(global_idx, recent, last_label, label_idx)
-            except:
-                pass
-            
-            logs = urw_log.get_logs(50)
-            logs_text = "\n".join(logs) if logs else "No logs available"
-            
-            report = """=== URW 2.0 Debug Report ===
-    Generated: {0}
-
-    [Game Information]
-    Game: {1}
-    Game Version: {2}
-    Ren'Py Version: {3}
-
-    [URW Information]
-    URW Version: {4}
-    URW Enabled: {5}
-    Text Size: {6}
-    Max Consequences: {7}
-
-    [System Information]
-    OS: {8}
-
-    [Current Context]
-      {9}
-
-    [Last Menu Captions]
-      {10}
-
-    [Sequence Tracking]
-      {11}
-
-    [Debug Logs (Last 50)]
-    {12}
-
-    === End of Report ===""".format(
-                _time.strftime("%Y-%m-%d %H:%M:%S"),
-                game_name,
-                game_version,
-                renpy_version,
-                urw_version,
-                persistent.urw_enabled,
-                persistent.urw_text_size,
-                persistent.urw_max_consequences,
-                os_info,
-                context_info,
-                last_captions,
-                sequence_info,
-                logs_text
-            )
-
-            import os
-            filename = "urw_debug_report.txt"
-            
-            with open(filename, "wb") as f:
-                f.write(report.encode('utf-8'))
-            
-            renpy.notify("Debug info saved to {0}".format(filename))
-            urw_log.info("Debug info saved to {0}".format(filename), "DEBUG")
-            
-        except Exception as e:
-            urw_log.error("Failed to save debug info: {0}".format(e), "DEBUG")
-            renpy.notify("Failed to save: {0}".format(e))
-
-    ##################################################################
-    #                URW CLEANUP FUNCTIONS (FIXED)                   #
-    ##################################################################
-    
-    def urw_cleanup():
-        """Clean up URW resources before exit - SAFE version"""
-        urw_log.info("URW cleanup started", "CLEANUP")
-        
-        # Close any open URW screens
-        urw_close_all_screens()
-        
-        # Don't uninstall menu wrapper - it can cause issues during quit
-        # Just save persistent data
-        urw_force_save()
-        
-        urw_log.info("URW cleanup complete", "CLEANUP")
-
-    # Don't add to quit_callbacks to avoid interfering with quit process
-    # The cleanup will be handled differently
 
 init 0 python:
     # This runs AFTER persistent values are loaded from disk
     # Initialize URW with the loaded persistent values
     urw_init()
 
-## Styles for URW ##
+##################################################################
+#                URW SCREEN STYLES AND TRANSFORMS               #
+##################################################################
+
 style URW_toggle_button:
     background "#333"
     hover_background "#555"
@@ -3095,13 +2828,13 @@ transform URW_slide_in_up:
     ease 0.4 alpha 1.0 yoffset 0
 
 ##################################################################
-#                URW FILTERS SCREEN                              #
+#                URW FILTERS SCREEN (FIXED)                     #
 ##################################################################
 
 screen URW_filters():
     tag menu
     modal True
-    zorder 201
+    zorder urw_config.MAX_SCREEN_ZORDER - 2
     
     add "#000" alpha 0.0:
         at transform:
@@ -3569,13 +3302,13 @@ screen URW_filters():
                     text_color "#fff"
 
 ##################################################################
-#                URW STATISTICS SCREEN                           #
+#                URW STATISTICS SCREEN (FIXED)                  #
 ##################################################################
 
 screen URW_stats_screen():
     tag menu
     modal True
-    zorder 201
+    zorder urw_config.MAX_SCREEN_ZORDER - 1
     
     add "#000" alpha 0.85
     
@@ -3701,13 +3434,13 @@ screen URW_stats_screen():
                     text_color "#000"
 
 ##################################################################
-#                URW MAIN PREFERENCES SCREEN                     #
+#                URW MAIN PREFERENCES SCREEN (FIXED)            #
 ##################################################################
 
 screen URW_preferences():
     tag menu
     modal True
-    zorder 200
+    zorder urw_config.MAX_SCREEN_ZORDER
     
     add "#000" alpha 0.0:
         at transform:
@@ -4194,13 +3927,13 @@ screen URW_preferences():
                     text_color "#fff"
 
 ##################################################################
-#                URW DEBUG SCREEN                                #
+#                URW DEBUG SCREEN (FIXED)                       #
 ##################################################################
 
 screen URW_debug():
     tag menu
     modal True
-    zorder 201
+    zorder urw_config.MAX_SCREEN_ZORDER + 1
     
     add "#000" alpha 0.9
     
@@ -4348,48 +4081,14 @@ screen URW_debug():
                     hover_background "#5fd3f7"
                     text_color "#000"
 
-init 999 python:
-    # DON'T add to config.quit_callbacks to avoid interfering with quit process
-    # The cleanup will be handled differently
-    
-    # Add keyboard shortcut
-    config.underlay.append(
-        renpy.Keymap(
-            alt_K_w = lambda: renpy.run(Show("URW_preferences"))
-        )
-    )
-    
-    # Add after load callback
-    def urw_after_load():
-        urw_log.persistent_debug("=== AFTER LOAD CALLBACK ===")
-        urw_log.persistent_debug("Loaded persistent.urw_text_size: {0}".format(persistent.urw_text_size))
-        urw_log.persistent_debug("Loaded persistent.urw_theme: {0}".format(persistent.urw_theme))
-        urw_log.persistent_debug("Loaded persistent.urw_logs_cleared: {0}".format(persistent.urw_logs_cleared))
-        
-        if hasattr(store, 'urw_menu_finder') and hasattr(urw_menu_finder, 'reset_sequence'):
-            urw_menu_finder.reset_sequence()
-            urw_log.info("Menu sequence reset after load", "LOAD")
-        
-        urw_log.persistent_debug("=== END AFTER LOAD ===")
-    
-    config.after_load_callbacks.append(urw_after_load)
-    
-    # Add startup logging
-    urw_log.persistent_debug("=== REN'PY STARTUP COMPLETE ===")
-    urw_log.persistent_debug("Final startup values:")
-    urw_log.persistent_debug("  urw_text_size: {0}".format(persistent.urw_text_size))
-    urw_log.persistent_debug("  urw_theme: {0}".format(persistent.urw_theme))
-    urw_log.persistent_debug("  urw_max_consequences: {0}".format(persistent.urw_max_consequences))
-    urw_log.persistent_debug("  urw_logs_cleared: {0}".format(persistent.urw_logs_cleared))
-
 ##################################################################
-#                URW FULL VIEWER SCREEN                          #
+#                URW FULL VIEWER SCREEN (FIXED)                 #
 ##################################################################
 
 screen URW_full_viewer():
     tag menu
     modal True
-    zorder 200
+    zorder urw_config.MAX_SCREEN_ZORDER
     
     key "game_menu" action Hide("URW_full_viewer", transition=dissolve)
     key "K_ESCAPE" action Hide("URW_full_viewer", transition=dissolve)
@@ -4594,3 +4293,74 @@ screen URW_full_viewer():
                     background "#4fc3f7"
                     hover_background "#5fd3f7"
                     text_color "#000"
+
+##################################################################
+#                URW KEYBOARD SHORTCUTS                         #
+##################################################################
+
+init 999 python:
+    # Add keyboard shortcut with proper z-order management
+    config.underlay.append(
+        renpy.Keymap(
+            alt_K_w = lambda: renpy.run(Show("URW_preferences"))
+        )
+    )
+    
+    # Add after load callback
+    def urw_after_load():
+        urw_log.persistent_debug("=== AFTER LOAD CALLBACK ===")
+        urw_log.persistent_debug("Loaded persistent.urw_text_size: {0}".format(persistent.urw_text_size))
+        urw_log.persistent_debug("Loaded persistent.urw_theme: {0}".format(persistent.urw_theme))
+        urw_log.persistent_debug("Loaded persistent.urw_logs_cleared: {0}".format(persistent.urw_logs_cleared))
+        
+        if hasattr(store, 'urw_menu_finder') and hasattr(urw_menu_finder, 'reset_sequence'):
+            urw_menu_finder.reset_sequence()
+            urw_log.info("Menu sequence reset after load", "LOAD")
+        
+        # Reset menu wrapper state
+        if hasattr(store, 'urw_menu_wrapper'):
+            urw_menu_wrapper._menu_active = False
+            urw_menu_wrapper._processing_menu = False
+        
+        urw_log.persistent_debug("=== END AFTER LOAD ===")
+    
+    config.after_load_callbacks.append(urw_after_load)
+    
+    # Add startup logging
+    urw_log.persistent_debug("=== REN'PY STARTUP COMPLETE ===")
+    urw_log.persistent_debug("Final startup values:")
+    urw_log.persistent_debug("  urw_text_size: {0}".format(persistent.urw_text_size))
+    urw_log.persistent_debug("  urw_theme: {0}".format(persistent.urw_theme))
+    urw_log.persistent_debug("  urw_max_consequences: {0}".format(persistent.urw_max_consequences))
+    urw_log.persistent_debug("  urw_logs_cleared: {0}".format(persistent.urw_logs_cleared))
+    
+    # Add a global function to check URW status
+    def urw_is_menu_active():
+        """Check if URW is currently processing a menu"""
+        if hasattr(store, 'urw_menu_wrapper'):
+            return getattr(urw_menu_wrapper, '_menu_active', False) or getattr(urw_menu_wrapper, '_processing_menu', False)
+        return False
+    
+    # Add screen cleanup on start
+    def urw_screen_cleanup():
+        """Clean up any leftover URW screens on game start"""
+        try:
+            renpy.hide_screen("URW_preferences")
+            renpy.hide_screen("URW_filters")
+            renpy.hide_screen("URW_stats_screen")
+            renpy.hide_screen("URW_debug")
+            renpy.hide_screen("URW_full_viewer")
+        except:
+            pass
+    
+    # Schedule cleanup after a short delay
+    import threading
+    import time
+    
+    def delayed_cleanup():
+        time.sleep(1.0)
+        urw_screen_cleanup()
+    
+    cleanup_thread = threading.Thread(target=delayed_cleanup)
+    cleanup_thread.daemon = True
+    cleanup_thread.start()
