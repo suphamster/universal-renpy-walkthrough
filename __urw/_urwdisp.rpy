@@ -1,4 +1,4 @@
-####          Universal Walkthrough System v1.6            ####
+####          Universal Walkthrough System v1.5            ####
 ####             (C) Knox Emberlyn 2025                    ####
 
 # This file is part of the Universal Walkthrough System for Ren'Py created by Knox Emberlyn.
@@ -322,7 +322,7 @@ screen universal_walkthrough_filters():
                             # Row 1
                             hbox:
                                 spacing 8
-                                textbutton "?":
+                                textbutton "❓":
                                     action ToggleDict(persistent.universal_wt_filters, 'conditions')
                                     style "wt_toggle_button"
                                     text_outlines [ ( 0, "#000", 0, 0) ]
@@ -362,7 +362,7 @@ screen universal_walkthrough_filters():
                             
                             hbox:
                                 spacing 8
-                                textbutton "FN":
+                                textbutton "🔧":
                                     action ToggleDict(persistent.universal_wt_filters, 'functions')
                                     style "wt_toggle_button"
                                     text_outlines [ ( 0, "#000", 0, 0) ]
@@ -383,7 +383,7 @@ screen universal_walkthrough_filters():
                             # Row 2
                             hbox:
                                 spacing 8
-                                textbutton ">>":
+                                textbutton "🦘":
                                     action ToggleDict(persistent.universal_wt_filters, 'jumps')
                                     style "wt_toggle_button"
                                     text_outlines [ ( 0, "#000", 0, 0) ]
@@ -423,7 +423,7 @@ screen universal_walkthrough_filters():
                             
                             hbox:
                                 spacing 8
-                                textbutton "CODE":
+                                textbutton "⚙":
                                     action ToggleDict(persistent.universal_wt_filters, 'code')
                                     style "wt_toggle_button"
                                     text_outlines [ ( 0, "#000", 0, 0) ]
@@ -444,7 +444,7 @@ screen universal_walkthrough_filters():
                             # Row 3
                             hbox:
                                 spacing 8
-                                textbutton "CALL":
+                                textbutton "📞":
                                     action ToggleDict(persistent.universal_wt_filters, 'calls')
                                     style "wt_toggle_button"
                                     text_outlines [ ( 0, "#000", 0, 0) ]
@@ -487,7 +487,7 @@ screen universal_walkthrough_filters():
                             # Row 4
                             hbox:
                                 spacing 8
-                                textbutton "<-":
+                                textbutton "↩":
                                     action ToggleDict(persistent.universal_wt_filters, 'returns')
                                     style "wt_toggle_button"
                                     text_outlines [ ( 0, "#000", 0, 0) ]
@@ -527,7 +527,7 @@ screen universal_walkthrough_filters():
                             
                             hbox:
                                 spacing 8
-                                textbutton "??":
+                                textbutton "?":
                                     action ToggleDict(persistent.universal_wt_filters, 'unknown')
                                     style "wt_toggle_button"
                                     text_outlines [ ( 0, "#000", 0, 0) ]
@@ -1066,7 +1066,6 @@ screen universal_walkthrough_preferences():
         xalign 0.5
         yalign 0.5
         xmaximum 700
-        # ymaximum 500
         background Frame("#000a", 20, 20)
         xpadding 40
         ypadding 30
@@ -1084,7 +1083,7 @@ screen universal_walkthrough_preferences():
                 spacing 10
                 xalign 0.5
                 
-                text "{color=#4a9eff}{size=32}{b}Universal Walkthrough System v1.6{/b}{/size}{/color}":
+                text "{color=#4a9eff}{size=32}{b}Universal Walkthrough System v1.5{/b}{/size}{/color}":
                     xalign 0.5
                     at transform:
                         alpha 0.0
@@ -1129,12 +1128,12 @@ screen universal_walkthrough_preferences():
                         xsize 80
                         ysize 35
                         if persistent.universal_walkthrough_enabled:
-                            background Frame("gui/button/choice_idle_background.png", 10, 10)
-                            text_color "#4a9eff"
+                            background "#4a9eff"
+                            text_color "#fff"
                         else:
-                            background Frame("gui/button/choice_hover_background.png", 10, 10)
-                            text_color "#ff6b6b"
-                        hover_background Frame("gui/button/choice_hover_background.png", 10, 10)
+                            background "#666"
+                            text_color "#ccc"
+                        hover_background "#6bb8ff"
                         text_hover_color "#fff"
                         text_xalign 0.5
                 
@@ -1161,6 +1160,9 @@ screen universal_walkthrough_preferences():
                             text_size 24
                             xsize 40
                             ysize 40
+                            background "#444"
+                            hover_background "#666"
+                            text_color "#fff"
                             text_xalign 0.5
                         
                         frame:
@@ -1186,6 +1188,9 @@ screen universal_walkthrough_preferences():
                             text_size 24
                             xsize 40
                             ysize 40
+                            background "#444"
+                            hover_background "#666"
+                            text_color "#fff"
                             text_xalign 0.5
 
                 vbox:
@@ -1211,6 +1216,9 @@ screen universal_walkthrough_preferences():
                             text_size 24
                             xsize 40
                             ysize 40
+                            background "#444"
+                            hover_background "#666"
+                            text_color "#fff"
                             text_xalign 0.5
                         
                         frame:
@@ -1236,6 +1244,9 @@ screen universal_walkthrough_preferences():
                             text_size 24
                             xsize 40
                             ysize 40
+                            background "#444"
+                            hover_background "#666"
+                            text_color "#fff"
                             text_xalign 0.5
 
 
@@ -1380,12 +1391,18 @@ screen universal_walkthrough_preferences():
                                 action Function(clear_walkthrough_caches)
                                 style "wt_debug_button"
                                 text_size 14
+                                background "#ff6b6b"
+                                hover_background "#ff8c8c"
+                                text_color "#fff"
                                 text_xalign 0.5
                             
                         textbutton "Show Memory":
                             action Function(log_memory_usage)
                             style "wt_debug_button"
                             text_size 14
+                            background "#ff6b6b"
+                            hover_background "#ff8c8c"
+                            text_color "#fff"
                             text_xalign 0.5
             
             null height 10
@@ -1396,6 +1413,9 @@ screen universal_walkthrough_preferences():
                 xalign 0.5
                 xsize 120
                 ysize 40
+                background "#4a9eff"
+                hover_background "#6bb8ff"
+                text_color "#fff"
                 at transform:
                     alpha 0.0
                     pause 1.6

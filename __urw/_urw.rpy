@@ -1,7 +1,7 @@
-####          Universal Walkthrough System v1.6            ####
+####          Universal Walkthrough System v1.5            ####
 ####             (C) Knox Emberlyn 2025                    ####
 
-# This file is part of the Universal Walkthrough System for Ren'Py created by Knox Emberlyn., working checkpoint
+# This file is part of the Universal Walkthrough System for Ren'Py created by Knox Emberlyn.
 
 init -999:
     define persistent.universal_wt_filters = {
@@ -35,12 +35,14 @@ init -999 python in dukeconfig:
     debug = False  # Set to True to enable debug messages
     developer = True
 
-init -998 python:
+# Changed to init -500 to avoid interfering with screen initialization
+init -500 python:
     import collections.abc
     import builtins
     import re
     import weakref
     import time as _urwtime
+    import traceback
 
     node_strategy_cache = {}
 
@@ -48,20 +50,19 @@ init -998 python:
         if dukeconfig.debug:
             print(*args, **kwargs)
     
-
-    # Ren'Py control exceptions that should NOT be caught
-    RENPY_CONTROL_EXCEPTIONS = (
-        renpy.game.RestartContext,
-        renpy.game.RestartTopContext, 
-        renpy.game.FullRestartException,
-        renpy.game.UtterRestartException,
-        renpy.game.QuitException,
-        renpy.game.JumpException,
-        renpy.game.JumpOutException,
-        renpy.game.CallException,
-        renpy.game.EndReplay
-    )
-
+    # Ren'Py control exceptions - safely defined without referencing non-existent classes
+    RENPY_CONTROL_EXCEPTIONS = ()
+    
+    # Safely collect available exception classes
+    try:
+        available_exceptions = []
+        for exc_name in ['RestartTopContext', 'FullRestartException', 'UtterRestartException', 
+                        'QuitException', 'JumpException', 'JumpOutException', 'CallException']:
+            if hasattr(renpy.game, exc_name):
+                available_exceptions.append(getattr(renpy.game, exc_name))
+        RENPY_CONTROL_EXCEPTIONS = tuple(available_exceptions)
+    except:
+        pass
     
     # Caching with execution context awareness
     consequence_cache = {}
@@ -585,7 +586,7 @@ init -998 python:
     def find_correct_menu_node_enhanced(items):
         """Enhanced menu finding function with multiple strategies"""
         try:
-            urwmsg("=== KNOX MENU DETECTION v1.6 ===")
+            urwmsg("=== KNOX MENU DETECTION v1.5 ===")
             
             # Get current execution context
             execution_context = get_execution_context_signature()
@@ -1230,12 +1231,12 @@ init -998 python:
         formatted = []
         
         arrows = {
-            'jump': ">>",
-            'call': "CALL",
-            'return': "<-",
-            'function': "FN",
-            'condition': "?",
-            'code': "CODE"
+            'jump': "➤",
+            'call': "📞",
+            'return': "↩",
+            'function': "🔧",
+            'condition': "❓",
+            'code': "⚙"
         }
     
         # Filter and format consequences
@@ -1647,7 +1648,7 @@ init -998 python:
         """walkthrough menu wrapper"""
         global cleanup_counter
         
-        urwmsg("=== UNIVERSAL WALKTHROUGH MENU v1.6 ===")
+        urwmsg("=== UNIVERSAL WALKTHROUGH MENU v1.5 ===")
         
         cleanup_counter += 1
         if cleanup_counter >= CLEANUP_INTERVAL:
@@ -1727,10 +1728,12 @@ init -998 python:
                 
                 return original_menu(enhanced_items, set_expr, args, kwargs, item_arguments)
         
-        except RENPY_CONTROL_EXCEPTIONS:
-            raise
         except Exception as e:
-            urwmsg("Error in enhanced walkthrough menu: {}".format(e))
+            # On any error, log and fall back to original menu without trying to identify exception types
+            urwmsg("Error in enhanced walkthrough menu (using fallback): {}".format(e))
+            if dukeconfig.debug:
+                traceback.print_exc()
+            return original_menu(items, set_expr, args, kwargs, item_arguments)
         
         return original_menu(items, set_expr, args, kwargs, item_arguments)
     
@@ -1768,7 +1771,7 @@ init -998 python:
     if not hasattr(persistent, 'universal_walkthrough_enabled'):
         persistent.universal_walkthrough_enabled = True
     
-    print("Universal Ren'Py Walkthrough System v1.6 Loaded for Game: {}-v{}".format(config.name, config.version))
+    print("Universal Ren'Py Walkthrough System v1.5 Loaded for Game: {}-v{}".format(config.name, config.version))
 
 
 ## Styles ##
